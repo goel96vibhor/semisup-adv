@@ -13,8 +13,9 @@ import pathlib
 from models.wideresnet import WideResNet
 from models.shake_shake import ShakeNet
 from models.cifar_resnet import ResNet
-
+from models.preact_resnet import PreActResNet18
 import torch
+import torch.nn.functional as F
 from torch.nn import Sequential, Module
 
 cifar10_label_names = ['airplane', 'automobile', 'bird',
@@ -39,6 +40,8 @@ def get_model(name, num_classes=10, normalize_input=False):
                               ))
     elif name_parts[0] == 'resnet':
         model = ResNet(num_classes=num_classes, depth=int(name_parts[1]))
+    elif name_parts[0] == 'PreActResnet18':
+        model = PreActResNet18()
     else:
         raise ValueError('Could not parse model name %s' % name)
 
@@ -47,6 +50,32 @@ def get_model(name, num_classes=10, normalize_input=False):
 
     return model
 
+def calculate_tensor_percentile(t: torch.tensor, q: float):
+    """
+    Return the ``q``-th percentile of the flattened input tensor's data.
+
+    CAUTION:
+     * Needs PyTorch >= 1.1.0, as ``torch.kthvalue()`` is used.
+     * Values are not interpolated, which corresponds to
+       ``numpy.percentile(..., interpolation="nearest")``.
+
+    :param t: Input tensor.
+    :param q: Percentile to compute, which must be between 0 and 100 inclusive.
+    :return: Resulting value (scalar).
+    """
+    # Note that ``kthvalue()`` works one-based, i.e. the first sorted value
+    # indeed corresponds to k=1, not k=0! Use float(q) instead of q directly,
+    # so that ``round()`` returns an integer, even if q is a np.float32.
+    k = 1 + round(.01 * float(q) * (t.numel() - 1))
+#     print("k for percentile: %d" %(k))
+    result = t.view(-1).kthvalue(k).values.item()
+    return result
+
+def calc_indiv_loss(y, targets):
+    temp = F.softmax(y)
+    loss = [-torch.log(temp[i][targets[i].item()]) for i in range(y.size(0))]
+#     loss = F.cross_entropy(y, targets, reduction = 'None')
+    return torch.stack(loss)
 
 class NormalizeInput(Module):
     def __init__(self, mean=(0.4914, 0.4822, 0.4465),
@@ -175,3 +204,46 @@ def load_new_test_data_indices(version_string='v7'):
     elif version_string == 'v4':
         assert len(tinyimage_indices) == 2021
     return tinyimage_indices
+
+
+def dump_pretrained_example_losses_to_file(model_dir, pretrained_epochs, model_name, loss_info):
+      pretrained_model = get_model(model_name)
+      assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
+      assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
+      
+      model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(pretrained_epochs) + '.pickle'
+      # assert os.path.isfile(model_file), 'Error: no checkpoint file found!'
+      # loss_info = dict()
+      # loss_info['model_name'] = model_name
+      # loss_info['dataset_length'] = example_losses.size(0)
+      # loss_info['examples_losses'] = example_losses
+      # loss_info['pretrained_acc'] = pretrained_acc
+      # loss_info['pretrained_epochs'] = pretrained_epochs
+      with open(model_file, 'wb') as f:
+            pickle.dump(loss_info, f)
+      print("Dumped losses for %d train examples to file %s" %(loss_info['example_cross_ent_losses'].size(0), model_file))
+
+def load_pretrained_example_losses_from_file(model_dir, model_name, epoch_no = None):
+      pretrained_model = get_model(model_name)
+      assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
+      assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
+      model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(epoch_no) + '.pickle'
+      assert os.path.isfile(model_file), 'Error: no example loss file found! --- %s' %(model_file)
+      with open(model_file, 'rb') as f:
+            loss_info = pickle.load(f)
+      model_name = loss_info['model_name']
+      train_dataset_size = loss_info['dataset_length']
+      example_cross_ent_losses = loss_info['example_cross_ent_losses']
+      example_multi_margin_losses = loss_info['example_multi_margin_losses']
+      example_labels = loss_info['example_labels']
+      example_outputs = loss_info['example_outputs']
+      pretrained_acc = loss_info['pretrained_acc']
+      pretrained_epochs = loss_info['pretrained_epochs']
+      multimarginloss_margin = loss_info['multimarginloss_margin']
+      # print(multimarginloss_margin)
+      assert train_dataset_size == example_cross_ent_losses.size(0), 'Error: size of input example loaded from file does not match'
+      print("Loaded losses for %d == %d train examples from file %s" %(train_dataset_size, example_cross_ent_losses.size(0), model_file))
+
+      return example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs
+
+

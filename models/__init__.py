@@ -4,4 +4,5 @@ __all__ = [
     'cifar_resnet',
     'wideresnet',
     'shake_shake',
+    'preact_resnet',
 ]

@@ -35,8 +35,15 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
             count = 0
             batch_num = 0
             natural_num_correct = 0
-            for data, target in test_loader:
+            print("restart pgd attack: %d" %(restart))
+            for data, target, indexes in test_loader:
                 batch_num = batch_num + 1
+            #     print(data.shape)
+            #     print(target.shape)
+            #     print(data[1, 1, 1, :])
+            #     print(target)
+                if(batch_num%10==0):
+                      print("batch_num: %d" %(batch_num))
                 if num_eval_batches and batch_num > num_eval_batches:
                     break
                 data, target = data.to(device), target.to(device)
@@ -59,8 +66,8 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
             num_correct_adv = is_correct_adv_over_restarts.prod(
                 axis=-1).prod(axis=-1).sum()
 
-            logging.info("Accuracy after %d restarts: %.4g%%" %
-                         (restart + 1, 100 * num_correct_adv / count))
+            logging.info("Accuracy after %d restarts: pgd: %.4g%%, natural: %.4g%%" %
+                         (restart + 1, 100 * num_correct_adv / count, 100 * natural_num_correct/ count))
             stats = {'attack': 'pgd',
                      'count': count,
                      'attack_params': attack_params,
@@ -75,7 +82,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
     elif attack == 'cw':
         all_linf_distances = []
         count = 0
-        for data, target in test_loader:
+        for data, target, indexes in test_loader:
             logging.info('Batch: %g', count)
             count = count + 1
             if num_eval_batches and count > num_eval_batches:
@@ -114,7 +121,7 @@ if __name__ == '__main__':
                         help='Model for attack evaluation')
     parser.add_argument('--model', '-m', default='wrn-28-10', type=str,
                         help='Name of the model')
-    parser.add_argument('--output_suffix', default='', type=str,
+    parser.add_argument('--output_suffix', default='_cifarold', type=str,
                         help='String to add to log filename')
     parser.add_argument('--batch_size', type=int, default=200, metavar='N',
                         help='Input batch size for testing (default: 200)')
@@ -187,6 +194,8 @@ if __name__ == '__main__':
                                     train=False, root='data',
                                     download=True,
                                     transform=transform_test)
+
+    
 
     if args.shuffle_testset:
         np.random.seed(123)

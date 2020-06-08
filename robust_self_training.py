@@ -1,6 +1,7 @@
 """
 Main robust self-training script. Based loosely on code from
 https://github.com/yaodongyu/TRADES
+
 """
 
 
@@ -14,13 +15,13 @@ import torch.optim as optim
 from torchvision import transforms
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
-
+from datetime import datetime
 import pandas as pd
 import numpy as np
 
 from utils import get_model
 
-from losses import trades_loss, noise_loss
+from losses import *
 from datasets import SemiSupervisedDataset, SemiSupervisedSampler, DATASETS
 from attack_pgd import pgd
 from smoothing import quick_smoothing
@@ -47,8 +48,10 @@ parser.add_argument('--svhn_extra', action='store_true', default=False,
 # Model config
 parser.add_argument('--model', '-m', default='wrn-28-10', type=str,
                     help='Name of the model (see utils.get_model)')
-parser.add_argument('--model_dir', default='./rst-model',
+parser.add_argument('--model_dir', default='./rst_augmented',
                     help='Directory of model for saving checkpoint')
+parser.add_argument('--test_name', default='',
+                    help='Test name to give proper subdirectory to model for saving checkpoint')
 parser.add_argument('--overwrite', action='store_true', default=False,
                     help='Cancels the run if an appropriate checkpoint is found')
 parser.add_argument('--normalize_input', action='store_true', default=False,
@@ -59,7 +62,7 @@ parser.add_argument('--normalize_input', action='store_true', default=False,
 # Logging and checkpointing
 parser.add_argument('--log_interval', type=int, default=5,
                     help='Number of batches between logging of training status')
-parser.add_argument('--save_freq', default=25, type=int,
+parser.add_argument('--save_freq', default=5, type=int,
                     help='Checkpoint save frequency (in epochs)')
 
 # Generic training configs
@@ -73,7 +76,7 @@ parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                     help='Input batch size for training (default: 128)')
 parser.add_argument('--test_batch_size', type=int, default=500, metavar='N',
                     help='Input batch size for testing (default: 128)')
-parser.add_argument('--epochs', type=int, default=200, metavar='N',
+parser.add_argument('--epochs', type=int, default=50, metavar='N',
                     help='Number of epochs to train. '
                          'Note: we arbitrarily define an epoch as a pass '
                          'through 50K datapoints. This is convenient for '
@@ -102,12 +105,14 @@ parser.add_argument('--nesterov', action='store_true', default=True,
                     help='Use extragrdient steps')
 
 # Adversarial / stability training config
+parser.add_argument('--use_adv_training', default=0, type=int,
+                    help='whether to use adversarial training')
 parser.add_argument('--loss', default='trades', type=str,
                     choices=('trades', 'noise'),
                     help='Which loss to use: TRADES-like KL regularization '
                          'or noise augmentation')
 
-parser.add_argument('--distance', '-d', default='l_2', type=str,
+parser.add_argument('--distance', '-d', default='l_inf', type=str,
                     help='Metric for attack model: l_inf uses adversarial '
                          'training and l_2 uses stability training and '
                          'randomized smoothing certification',
@@ -124,7 +129,7 @@ parser.add_argument('--beta', default=6.0, type=float,
                     help='stability regularization, i.e., 1/lambda in TRADES')
 
 # Semi-supervised training configuration
-parser.add_argument('--aux_data_filename', default=None, type=str,
+parser.add_argument('--aux_data_filename', default='ti_500K_pseudo_labeled.pickle', type=str,
                     help='Path to pickle file containing unlabeled data and '
                          'pseudo-labels used for RST')
 
@@ -152,7 +157,15 @@ parser.add_argument('--cutout', action='store_true', default=False,
 args = parser.parse_args()
 
 # ------------------------------ OUTPUT SETUP ----------------------------------
+
 model_dir = args.model_dir
+
+if args.test_name == '':
+      sub_dir = str('_'.join(sys.argv[2::2])) +'_{:%Y-%m-%d-%H-%M-%S}/'.format(datetime.now())
+else:
+      sub_dir = args.test_name
+
+model_dir = model_dir + '/' + sub_dir + '/' + args.model
 if not os.path.exists(model_dir):
     os.makedirs(model_dir)
 
@@ -160,7 +173,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(args.model_dir, 'training.log')),
+        logging.FileHandler(os.path.join(model_dir, 'training.log')),
         logging.StreamHandler()
     ])
 logger = logging.getLogger()
@@ -240,6 +253,8 @@ train_batch_sampler = SemiSupervisedSampler(
     num_batches=int(np.ceil(50000 / args.batch_size)))
 epoch_size = len(train_batch_sampler) * args.batch_size
 
+print("Epoch size: %d" %(epoch_size))
+
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 train_loader = DataLoader(trainset, batch_sampler=train_batch_sampler, **kwargs)
 
@@ -269,13 +284,25 @@ def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     train_metrics = []
     epsilon = args.epsilon
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target, indexes) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
 
         # calculate robust loss
-        if args.loss == 'trades':
+        if not args.use_adv_training:
+            (loss, natural_loss, robust_loss,
+             entropy_loss_unlabeled) = trades_non_adv_loss(
+                model=model,
+                x_natural=data,
+                y=target,
+                optimizer=optimizer,
+                step_size=args.pgd_step_size,
+                epsilon=epsilon,
+                beta=args.beta,
+                distance=args.distance,
+                entropy_weight=args.entropy_weight)
+        elif args.loss == 'trades':
             # The TRADES KL-robustness regularization term proposed by
             # Zhang et al., with some additional features
             (loss, natural_loss, robust_loss,
@@ -330,7 +357,7 @@ def eval(args, model, device, eval_set, loader):
 
     model.eval()
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(loader):
+        for batch_idx, (data, target, indexes) in enumerate(loader):
             data, target = data.to(device), target.to(device)
             data, target = data[target != -1], target[target != -1]
             output = model(data)

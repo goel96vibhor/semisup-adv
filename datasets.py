@@ -6,13 +6,13 @@ from torchvision.datasets import CIFAR10, SVHN
 from torch.utils.data import Sampler, Dataset
 import torch
 import numpy as np
-
+import cifar_own
 import os
 import pickle
 
 import logging
 
-DATASETS = ['cifar10', 'svhn']
+DATASETS = ['cifar10', 'svhn', 'cifar_own']
 
 
 class SemiSupervisedDataset(Dataset):
@@ -24,12 +24,15 @@ class SemiSupervisedDataset(Dataset):
                  aux_data_filename=None,
                  add_aux_labels=False,
                  aux_take_amount=None,
-                 train=False,
+                 train=False, custom_dataset = None, 
                  **kwargs):
         """A dataset with auxiliary pseudo-labeled data"""
 
         if base_dataset == 'cifar10':
             self.dataset = CIFAR10(train=train, **kwargs)
+        elif base_dataset == 'cifar_own':
+            print("Using own cifar implementation")
+            self.dataset = cifar_own.CIFAR10(train=train, **kwargs)
         elif base_dataset == 'svhn':
             if train:
                 self.dataset = SVHN(split='train', **kwargs)
@@ -43,17 +46,21 @@ class SemiSupervisedDataset(Dataset):
                 svhn_extra = SVHN(split='extra', **kwargs)
                 self.data = np.concatenate([self.data, svhn_extra.data])
                 self.targets.extend(svhn_extra.labels)
+        elif base_dataset == 'custom' and custom_dataset != None:
+            self.dataset = custom_dataset
         else:
             raise ValueError('Dataset %s not supported' % base_dataset)
         self.base_dataset = base_dataset
         self.train = train
-
+        self.sup_indices = list(range(len(self.targets)))
+        print("Printing length of targets: %s sup indices: %s" %(len(self.targets), len(self.sup_indices)))
         if self.train:
             if take_amount is not None:
                 rng_state = np.random.get_state()
                 np.random.seed(take_amount_seed)
                 take_inds = np.random.choice(len(self.sup_indices),
-                                             take_amount, replace=False)
+                                             take_amount, replace=False).astype(int)
+            #     print(take_inds.dtype)
                 np.random.set_state(rng_state)
 
                 logger = logging.getLogger()
@@ -61,10 +68,11 @@ class SemiSupervisedDataset(Dataset):
                             ' set, seed=%d, indices=%s',
                             take_amount, len(self.sup_indices),
                             take_amount_seed, take_inds)
-                self.targets = self.targets[take_inds]
-                self.data = self.data[take_inds]
+                self.targets = np.array(self.targets)[take_inds]
+                self.data = np.array(self.data)[take_inds]
+                self.sup_indices = list(range(len(self.targets)))
 
-            self.sup_indices = list(range(len(self.targets)))
+            print("CIFAR data: targets after filtering: %s sup indices: %s" %(len(self.targets), len(self.sup_indices)))
             self.unsup_indices = []
 
             if aux_data_filename is not None:
@@ -75,33 +83,35 @@ class SemiSupervisedDataset(Dataset):
                 aux_data = aux['data']
                 aux_targets = aux['extrapolated_targets']
                 orig_len = len(self.data)
+                self.unsup_indices.extend(range(orig_len, orig_len+len(aux_data)))
 
                 if aux_take_amount is not None:
                     rng_state = np.random.get_state()
                     np.random.seed(take_amount_seed)
-                    take_inds = np.random.choice(len(aux_data),
+                    take_inds = np.random.choice(len(self.unsup_indices),
                                                  aux_take_amount, replace=False)
                     np.random.set_state(rng_state)
-
                     logger = logging.getLogger()
                     logger.info(
                         'Randomly taking only %d/%d examples from aux data'
                         ' set, seed=%d, indices=%s',
-                        aux_take_amount, len(aux_data),
+                        aux_take_amount, len(self.unsup_indices),
                         take_amount_seed, take_inds)
                     aux_data = aux_data[take_inds]
                     aux_targets = aux_targets[take_inds]
-
-                self.data = np.concatenate((self.data, aux_data), axis=0)
-
+                    self.unsup_indices = list(range(orig_len, orig_len+len(aux_data)))
+            
+                self.data = np.concatenate([self.data, aux_data])
                 if not add_aux_labels:
-                    self.targets.extend([-1] * len(aux_data))
+                    self.targets = np.concatenate([ self.targets, extend([-1] * len(aux_data))])
                 else:
-                    self.targets.extend(aux_targets)
+                    self.targets = np.concatenate([self.targets, aux_targets])
+                print("Unlabeled data: targets after filtering: %s unsup indices: %s" %(len(self.targets), len(self.unsup_indices)))
+                print(self.data.dtype)
+                print(self.targets.dtype)
                 # note that we use unsup indices to track the labeled datapoints
                 # whose labels are "fake"
-                self.unsup_indices.extend(
-                    range(orig_len, orig_len+len(aux_data)))
+                
 
             logger = logging.getLogger()
             logger.info("Training set")
@@ -125,6 +135,8 @@ class SemiSupervisedDataset(Dataset):
             logger.info("Label histogram: %s",
                         tuple(
                             zip(*np.unique(self.targets, return_counts=True))))
+            logger.info("Class of data: %s", self.data[1].dtype)
+            logger.info("Value of data: %s", self.data[1, 1, 1, :])
             logger.info("Shape of data: %s", np.shape(self.data))
 
     @property
@@ -148,7 +160,7 @@ class SemiSupervisedDataset(Dataset):
 
     def __getitem__(self, item):
         self.dataset.labels = self.targets  # because torchvision is annoying
-        return self.dataset[item]
+        return self.dataset[item] + (item,)
 
     def __repr__(self):
         fmt_str = 'Semisupervised Dataset ' + self.__class__.__name__ + '\n'
@@ -172,11 +184,11 @@ class SemiSupervisedSampler(Sampler):
         else:
             self.sup_inds = sup_inds
             self.unsup_inds = unsup_inds
-
+        print(self.unsup_inds[0:20])
         self.batch_size = batch_size
         unsup_batch_size = int(batch_size * unsup_fraction)
         self.sup_batch_size = batch_size - unsup_batch_size
-
+        
         if num_batches is not None:
             self.num_batches = num_batches
         else:
@@ -205,7 +217,8 @@ class SemiSupervisedSampler(Sampler):
                 # batch-norm / DataParallel hell ensues
                 np.random.shuffle(batch)
                 yield batch
+            #     print(batch)
                 batch_counter += 1
-
+        
     def __len__(self):
         return self.num_batches
