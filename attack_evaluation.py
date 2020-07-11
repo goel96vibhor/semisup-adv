@@ -157,7 +157,7 @@ if __name__ == '__main__':
     else:
           output_dir, checkpoint_name = os.path.split(args.model_path)
           epoch = int(re.search('epoch(\d+)', checkpoint_name).group(1))
-          output_suffix = epoch + output_suffix
+          output_suffix = str(epoch) + output_suffix
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(message)s",
