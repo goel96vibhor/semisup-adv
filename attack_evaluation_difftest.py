@@ -19,7 +19,7 @@ from torchvision import transforms
 from attack_pgd import pgd
 from attack_cw import cw
 import torch.backends.cudnn as cudnn
-from utils import get_model
+from utils import *
 from diff_distribution_dataload_helper import get_new_distribution_loader
 
 
@@ -113,66 +113,59 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='PyTorch CIFAR Attack Evaluation')
-    parser.add_argument('--dataset', type=str, default='custom',
-                        choices=['cifar10', 'svhn', 'custom'],
-                        help='The dataset')
-    parser.add_argument('--model_path',
-                        help='Model for attack evaluation')
-    parser.add_argument('--model', '-m', default='wrn-28-10', type=str,
-                        help='Name of the model')
-    parser.add_argument('--output_suffix', default='_cifarv2', type=str,
-                        help='String to add to log filename')
-    parser.add_argument('--batch_size', type=int, default=200, metavar='N',
-                        help='Input batch size for testing (default: 200)')
-    parser.add_argument('--no_cuda', action='store_true', default=False,
-                        help='Disables CUDA training')
-    parser.add_argument('--epsilon', default=0.031, type=float,
-                        help='Attack perturbation magnitude')
-    parser.add_argument('--attack', default='pgd', type=str,
-                        help='Attack type (CW requires FoolBox)',
-                        choices=('pgd', 'cw'))
-    parser.add_argument('--num_steps', default=40, type=int,
-                        help='Number of PGD steps')
-    parser.add_argument('--step_size', default=0.01, type=float,
-                        help='PGD step size')
-    parser.add_argument('--num_restarts', default=5, type=int,
-                        help='Number of restarts for PGD attack')
-    parser.add_argument('--no_random_start', dest='random_start',
-                        action='store_false',
-                        help='Disable random PGD initialization')
-    parser.add_argument('--binary_search_steps', default=5, type=int,
-                        help='Number of binary search steps for CW attack')
-    parser.add_argument('--max_iterations', default=1000, type=int,
-                        help='Max number of Adam iterations in each CW'
-                             ' optimization')
-    parser.add_argument('--learning_rate', default=5E-3, type=float,
-                        help='Learning rate for CW attack')
-    parser.add_argument('--initial_const', default=1E-2, type=float,
-                        help='Initial constant for CW attack')
-    parser.add_argument('--tau_decrease_factor', default=0.9, type=float,
-                        help='Tau decrease factor for CW attack')
-    parser.add_argument('--random_seed', default=0, type=int,
-                        help='Random seed for permutation of test instances')
-    parser.add_argument('--num_eval_batches', default=None, type=int,
-                        help='Number of batches to run evalaution on')
-    parser.add_argument('--shuffle_testset', action='store_true', default=False,
-                        help='Shuffles the test set')
+    parser = argparse.ArgumentParser(description='PyTorch CIFAR Attack Evaluation')
+    # dataset configs
+    parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
+                              choices=['cifar10', 'svhn', 'custom'])
+    parser.add_argument('--qmnist10k', default=1, type=int, help='whether to use qmnist 10k or 60k dataset for evaluation')                        
+    parser.add_argument('--output_suffix', default='_cifarv2', type=str, help='String to add to log filename')
+    # model configs 
+    parser.add_argument('--model_path', help='Model for attack evaluation')
+    parser.add_argument('--model', '-m', default='wrn-28-10', type=str, help='Name of the model')
+    # detector model config
+    parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
+    parser.add_argument('--use-detector-evaluation', default=0, type=int, help='Use detector model for evaluation')
+    parser.add_argument('--detector_model_path', default = 'selection_model/selection_model.pth', type = str, help='Model for attack evaluation')
+    # run configs
+    parser.add_argument('--batch_size', type=int, default=200, metavar='N', help='Input batch size for testing (default: 200)')
+    parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training')
+    parser.add_argument('--random_seed', default=0, type=int, help='Random seed for permutation of test instances')
+    parser.add_argument('--num_eval_batches', default=None, type=int, help='Number of batches to run evalaution on')
+    parser.add_argument('--shuffle_testset', action='store_true', default=False, help='Shuffles the test set')
+    # attak configs
+    parser.add_argument('--epsilon', default=0.031, type=float, help='Attack perturbation magnitude')
+    parser.add_argument('--attack', default='pgd', type=str, help='Attack type (CW requires FoolBox)', choices=('pgd', 'cw'))
+    # PGD attack specifig configs
+    parser.add_argument('--num_steps', default=40, type=int, help='Number of PGD steps')
+    parser.add_argument('--step_size', default=0.01, type=float, help='PGD step size')
+    parser.add_argument('--num_restarts', default=5, type=int, help='Number of restarts for PGD attack')
+    parser.add_argument('--no_random_start', dest='random_start', action='store_false', help='Disable random PGD initialization')
+    # CW attack specific configs
+    parser.add_argument('--binary_search_steps', default=5, type=int, help='Number of binary search steps for CW attack')
+    parser.add_argument('--max_iterations', default=1000, type=int, help='Max number of Adam iterations in each CW optimization')
+    parser.add_argument('--learning_rate', default=5E-3, type=float, help='Learning rate for CW attack')
+    parser.add_argument('--initial_const', default=1E-2, type=float, help='Initial constant for CW attack')
+    parser.add_argument('--tau_decrease_factor', default=0.9, type=float, help='Tau decrease factor for CW attack')
+    
 
     args = parser.parse_args()
     torch.manual_seed(args.random_seed)
-
-    output_dir, checkpoint_name = os.path.split(args.model_path)
-    epoch = int(re.search('epoch(\d+)', checkpoint_name).group(1))
     
+    output_suffix = args.output_suffix
+    if args.use_detector_evaluation:
+          output_dir, checkpoint_name = os.path.split(args.detector_model_path)
+          output_suffix = output_suffix+'_detector'
+    else:
+          output_dir, checkpoint_name = os.path.split(args.model_path)
+          epoch = int(re.search('epoch(\d+)', checkpoint_name).group(1))
+          output_suffix = epoch + output_suffix
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(message)s",
         handlers=[
             logging.FileHandler(os.path.join(output_dir,
-                                             'attack_epoch%d%s.log' %
-                                             (epoch, args.output_suffix))),
+                                             'attack_epoch%s.log' %
+                                             (output_suffix))),
             logging.StreamHandler()
         ])
     logger = logging.getLogger()
@@ -212,27 +205,30 @@ if __name__ == '__main__':
                                               batch_size=args.batch_size,
                                               shuffle=False, **dl_kwargs)
 
-    checkpoint = torch.load(args.model_path)
-    state_dict = checkpoint.get('state_dict', checkpoint)
-    num_classes = checkpoint.get('num_classes', 10)
-    normalize_input = checkpoint.get('normalize_input', False)
-    print("normalize input ------------------")
-    print(normalize_input)
-    model = get_model(args.model, num_classes=num_classes,
-                      normalize_input=normalize_input)
-    if use_cuda:
-        model = torch.nn.DataParallel(model).cuda()
-        cudnn.benchmark = True
-        if not all([k.startswith('module') for k in state_dict]):
-            state_dict = {'module.' + k: v for k, v in state_dict.items()}
+    if args.use_detector_evaluation:
+        logging.info("using detector model for evaluation")
+        model = load_detector_model(args)
     else:
-        def strip_data_parallel(s):
-            if s.startswith('module'):
-                return s[len('module.'):]
-            else:
-                return s
-        state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
-    model.load_state_dict(state_dict)
+        checkpoint = torch.load(args.model_path)
+        state_dict = checkpoint.get('state_dict', checkpoint)
+        num_classes = checkpoint.get('num_classes', 10)
+        normalize_input = checkpoint.get('normalize_input', False)
+        logging.info("using %s model for evaluation from path %s" %(args.model, args.model_path))
+        model = get_model(args.model, num_classes=num_classes, normalize_input=normalize_input)
+        if use_cuda:
+            model = torch.nn.DataParallel(model).cuda()
+            cudnn.benchmark = True
+            if not all([k.startswith('module') for k in state_dict]):
+                  state_dict = {'module.' + k: v for k, v in state_dict.items()}
+        else:
+            def strip_data_parallel(s):
+                  if s.startswith('module'):
+                        return s[len('module.'):]
+                  else:
+                        return s
+            state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
+
 
     attack_params = {
         'epsilon': args.epsilon,

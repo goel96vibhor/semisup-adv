@@ -9,7 +9,7 @@ import os
 import pickle
 from torch.utils import data
 import pdb
-
+from torchvision import transforms
 def get_loader(batch_size, num_workers, use_gpu):
     mean = np.array([0.4914, 0.4822, 0.4465])
     std = np.array([0.2470, 0.2435, 0.2616])
@@ -53,7 +53,7 @@ def get_loader(batch_size, num_workers, use_gpu):
 """ Function to load data for cifar0 vs TI classifier
 """
 def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu,
-                             cifar_fraction=0.5, dataset_dir='data', 
+                             cifar_fraction=0.5, dataset_dir='data', custom_testset = None,
                              logger=None):
 
     # Normalization values for CIFAR-10
@@ -73,40 +73,45 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu,
 
     train_dataset = torchvision.datasets.CIFAR10(
         dataset_dir, train=True, transform=train_transform, download=True)
-    test_dataset = torchvision.datasets.CIFAR10(
-        dataset_dir, train=False, transform=test_transform, download=True)
+    if custom_testset is None:
+          test_dataset = torchvision.datasets.CIFAR10(
+                  dataset_dir, train=False, transform=test_transform, download=True)
+    else:
+          logger.info("using custom testset")
+          test_dataset = custom_testset
+
 
     # Reading tinyimages and appropriate train/test indices
     logger.info('Reading tiny images')
-    ti_path = os.path.join(dataset_dir, 'tiny_images.bin')
-    ti_data = np.memmap(ti_path, mode='r', dtype='uint8', order='F',
-                        shape=(32, 32, 3, 79302017)).transpose([3, 0, 1, 2])
+#     ti_path = os.path.join(dataset_dir, 'tiny_images.bin')
+#     ti_data = np.memmap(ti_path, mode='r', dtype='uint8', order='F',
+#                         shape=(32, 32, 3, 79302017)).transpose([3, 0, 1, 2])
     
-    logger.info('Size of tiny images {}'.format(ti_data.size))
-    ti_indices_path = os.path.join(dataset_dir,
-                                   'ti_vs_cifar_inds.pickle')
-    with open(ti_indices_path, 'rb') as f:
-        ti_indices = pickle.load(f)
-    logger.info('Loaded TI indices')
+#     logger.info('Size of tiny images {}'.format(ti_data.size))
+#     ti_indices_path = os.path.join(dataset_dir,
+#                                    'ti_vs_cifar_inds.pickle')
+#     with open(ti_indices_path, 'rb') as f:
+#         ti_indices = pickle.load(f)
+#     logger.info('Loaded TI indices')
     
-    for dataset, name in zip((train_dataset, test_dataset), ('train', 'test')):
-        dataset.data = np.concatenate((dataset.data, ti_data[ti_indices[name]]))
-        # All tinyimages are given label 10
-        dataset.targets.extend([10] * len(ti_indices[name]))
+#     for dataset, name in zip((train_dataset, test_dataset), ('train', 'test')):
+#         dataset.data = np.concatenate((dataset.data, ti_data[ti_indices[name]]))
+#         # All tinyimages are given label 10
+#         dataset.targets.extend([10] * len(ti_indices[name]))
 
-    logger.info('Calling train sampler')
-    # Balancing training batches with CIFAR10 and TI
-    train_sampler = BalancedSampler(
-        train_dataset.targets, batch_size,
-        balanced_fraction=cifar_fraction,
-        num_batches=int(50000 / (batch_size * cifar_fraction)),
-        label_to_balance=10, 
-        logger=logger)
+#     logger.info('Calling train sampler')
+#     # Balancing training batches with CIFAR10 and TI
+#     train_sampler = BalancedSampler(
+#         train_dataset.targets, batch_size,
+#         balanced_fraction=cifar_fraction,
+#         num_batches=int(50000 / (batch_size * cifar_fraction)),
+#         label_to_balance=10, 
+#         logger=logger)
     
     logger.info('Created train sampler')
     train_loader = data.DataLoader(
         train_dataset,
-        batch_sampler=train_sampler,
+      #   batch_sampler=train_sampler,
         num_workers=num_workers,
         pin_memory=use_gpu,
     )
@@ -123,6 +128,41 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu,
     logger.info('Created test loader')
     return train_loader, test_loader
 
+
+
+def get_cinic_dataset_loader(batch_size, num_workers, use_gpu):
+
+      cinic_directory = '.'
+      cinic_mean = [0.47889522, 0.47227842, 0.43047404]
+      cinic_std = [0.24205776, 0.23828046, 0.25874835]
+      cinic_train = torch.utils.data.DataLoader(
+            torchvision.datasets.ImageFolder(cinic_directory + '/train',
+                  transform=transforms.Compose([
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=cinic_mean,std=cinic_std)]
+                        )),
+            
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=use_gpu,
+            drop_last=True,
+      )
+      cinic_test = torch.utils.data.DataLoader(
+            torchvision.datasets.ImageFolder(cinic_directory + '/test',
+                  transform=transforms.Compose([
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=cinic_mean,std=cinic_std)]
+                        )),
+
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            pin_memory=use_gpu,
+            drop_last=False,
+      )
+
+      return cinic_train, cinic_test
 
 class BalancedSampler(data.Sampler):
     def __init__(self, labels, batch_size,

@@ -5,7 +5,7 @@ import sys
 from torch.utils.data import DataLoader,Dataset
 from os import path
 import torch
-from scipy.misc import toimage
+# from scipy.misc import toimage
 
 sys.path.append(path.abspath('CIFAR_modified/code'))
 
@@ -53,6 +53,8 @@ def get_new_distribution_loader():
       print('Class "{}"'.format(cifar_label_names[labels[image_index]]))
       return my_dataset(images, labels)
       
+
+
 
 
 if __name__ == '__main__':

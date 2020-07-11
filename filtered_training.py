@@ -40,7 +40,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--dataset', type=str, default='cifar10', choices=DATASETS, help='The dataset to use for training)')
 parser.add_argument('--data_dir', default='data', type=str, help='Directory where datasets are located')
 parser.add_argument('--svhn_extra', action='store_true', default=False, help='Adds the extra SVHN data')
-
+parser.add_argument('--extend_svhn', default=0, type=int, help='Whether to add supervised svhn data while training')
+parser.add_argument('--extend_svhn_fraction', default=0.5, type=float, help='What fraction of svhn data while training')
 # Model config
 parser.add_argument('--model', '-m', default='wrn-28-10', type=str, help='Name of the model (see utils.get_model)')
 parser.add_argument('--model_dir', default='./rst_augmented', help='Directory of model for saving checkpoint')
@@ -48,7 +49,9 @@ parser.add_argument('--test_name', default='', help='Test name to give proper su
 parser.add_argument('--overwrite', action='store_true', default=False, help='Cancels the run if an appropriate checkpoint is found')
 parser.add_argument('--normalize_input', action='store_true', default=False, help='Apply standard CIFAR normalization first thing '
                          'in the network (as part of the model, not in the data fetching pipline)')
-
+# detector model config
+parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
+parser.add_argument('--use-detector-training', default=0, type=int, help='Use detector model for natural shift generation')
 # Logging and checkpointing
 parser.add_argument('--log_interval', type=int, default=5, help='Number of batches between logging of training status')
 parser.add_argument('--save_freq', default=25, type=int, help='Checkpoint save frequency (in epochs)')
@@ -87,7 +90,7 @@ parser.add_argument('--nesterov', action='store_true', default=True, help='Use e
 
 # Adversarial / stability training config
 parser.add_argument('--use_adv_training', default=0, type=int, help='whether to use adversarial training')
-parser.add_argument('--loss', default='trades', type=str, choices=('trades', 'noise'), help='Which loss to use: TRADES-like KL regularization '
+parser.add_argument('--loss', default='trades', type=str, choices=('trades', 'noise', 'shift'), help='Which loss to use: TRADES-like KL regularization '
                          'or noise augmentation')
 
 parser.add_argument('--distance', '-d', default='l_inf', type=str, help='Metric for attack model: l_inf uses adversarial '
@@ -96,7 +99,8 @@ parser.add_argument('--epsilon', default=0.031, type=float, help='Adversarial pe
 parser.add_argument('--pgd_num_steps', default=10, type=int, help='number of pgd steps in adversarial training')
 parser.add_argument('--pgd_step_size', default=0.007, help='pgd steps size in adversarial training', type=float)
 parser.add_argument('--beta', default=6.0, type=float, help='stability regularization, i.e., 1/lambda in TRADES')
-
+parser.add_argument('--w_1', default=1.0, type=float, help='detector loss weight')
+parser.add_argument('--w_2', default=1.0, type=float, help='main loss weight')
 # Semi-supervised training configuration
 parser.add_argument('--aux_data_filename', default='ti_500K_pseudo_labeled.pickle', type=str,
                     help='Path to pickle file containing unlabeled data and pseudo-labels used for RST')
@@ -120,12 +124,12 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0):
       soft_out = F.softmax(example_outputs)
       soft_max = torch.max(soft_out, dim=1).values
       mu, std = norm.fit(soft_max)
-      # upper_limit = mu
-      # lower_limit = mu - (unsup_std_deviations*std)
-      upper_limit = mu + unsup_std_deviations*std
-      lower_limit = mu - unsup_std_deviations*std
+      upper_limit = mu
+      lower_limit = mu - (unsup_std_deviations*std)
+      # upper_limit = mu + unsup_std_deviations*std
+      # lower_limit = mu - unsup_std_deviations*std
       indices = ((soft_max < upper_limit) & (soft_max > lower_limit)).nonzero().view(-1)
-      print("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
+      logging.info("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
       return indices
 
 
@@ -213,6 +217,8 @@ transform_test = transforms.Compose([
 trainset = SemiSupervisedDataset(base_dataset=args.dataset,
                                  add_svhn_extra=args.svhn_extra,
                                  root=args.data_dir, train=True,
+                                 extend_svhn = args.extend_svhn,
+                                 extend_svhn_fraction = args.extend_svhn_fraction,
                                  download=True, transform=transform_train,
                                  aux_data_filename=args.aux_data_filename,
                                  add_aux_labels=not args.remove_pseudo_labels,
@@ -226,19 +232,23 @@ if args.filter_unsup_data:
       example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                   args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
       filtered_unsup_indices = get_filtered_indices(example_outputs, args.unsup_std_deviations)
-      print("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
+      logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
       print(trainset.unsup_indices[0:10])
-epoch_datapoint_count = 50000 if args.train_take_amount is None else args.train_take_amount
-print("epoch datapoints count: %d" %(epoch_datapoint_count))
+epoch_datapoint_count = 50000 
+if args.train_take_amount is not None:
+      epoch_datapoint_count = args.train_take_amount
+# elif args.extend_svhn:
+#       epoch_datapoint_count += 73257
+logger.info("epoch datapoints count: %d" %(epoch_datapoint_count))
 train_batch_sampler = SemiSupervisedSampler(
     trainset.sup_indices, trainset.unsup_indices,
     args.batch_size, args.unsup_fraction,
     num_batches=int(np.ceil(epoch_datapoint_count / args.batch_size)))
 epoch_size = len(train_batch_sampler) * args.batch_size
 
-print("Epoch size: %d" %(epoch_size))
+logger.info("Epoch size: %d" %(epoch_size))
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 train_loader = DataLoader(trainset, batch_sampler=train_batch_sampler, **kwargs)
@@ -246,6 +256,7 @@ train_loader = DataLoader(trainset, batch_sampler=train_batch_sampler, **kwargs)
 testset = SemiSupervisedDataset(base_dataset=args.dataset,
                                 root=args.data_dir, train=False,
                                 download=True,
+                              #   extend_svhn = args.extend_svhn,
                                 transform=transform_test)
 test_loader = DataLoader(testset, batch_size=args.test_batch_size,
                          shuffle=False, **kwargs)
@@ -253,6 +264,7 @@ test_loader = DataLoader(testset, batch_size=args.test_batch_size,
 trainset_eval = SemiSupervisedDataset(
     base_dataset=args.dataset,
     add_svhn_extra=args.svhn_extra,
+#     extend_svhn = args.extend_svhn,
     root=args.data_dir, train=True,
     download=True, transform=transform_train)
 
@@ -264,17 +276,44 @@ eval_test_loader = DataLoader(testset, batch_size=args.test_batch_size,
 # ------------------------------------------------------------------------------
 
 # ----------------------- TRAIN AND EVAL FUNCTIONS -----------------------------
-def train(args, model, device, train_loader, optimizer, epoch):
+def train(args, model, device, train_loader, optimizer, epoch, detector_model = None):
     model.train()
     train_metrics = []
     epsilon = args.epsilon
+    total_main_loss = 0
+    total_detector_loss = 0
+    total_count = 0.01
     for batch_idx, (data, target, indexes) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
 
         # calculate robust loss
-        if not args.use_adv_training:
+        if args.loss == 'shift':
+            # The TRADES KL-robustness regularization term proposed by
+            # Zhang et al., with some additional features
+            assert detector_model != None, 'Error: no detector model found!'
+            (loss, natural_loss, robust_loss,
+             entropy_loss_unlabeled, main_loss, detector_loss) = shift_loss(
+                model=model,
+                detector_model = detector_model,
+                x_natural=data,
+                y=target,
+                optimizer=optimizer,
+                w_1 = args.w_1, 
+                w_2 = args.w_2,
+                step_size=args.pgd_step_size,
+                epsilon=epsilon,
+                perturb_steps=args.pgd_num_steps,
+                beta=args.beta,
+                distance=args.distance,
+                adversarial=args.distance == 'l_inf',
+                entropy_weight=args.entropy_weight)
+
+            total_main_loss += main_loss.item()
+            total_detector_loss += detector_loss.item()
+            total_count += 1
+        elif not args.use_adv_training:
             (loss, natural_loss, robust_loss,
              entropy_loss_unlabeled) = trades_non_adv_loss(
                 model=model,
@@ -324,9 +363,9 @@ def train(args, model, device, train_loader, optimizer, epoch):
         # print progress
         if batch_idx % args.log_interval == 0:
             logging.info(
-                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tMain Loss: {:.6f}\tDetector Loss: {:.6f}'.format(
                     epoch, batch_idx * len(data), epoch_size,
-                           100. * batch_idx / len(train_loader), loss.item()))
+                           100. * batch_idx / len(train_loader), loss.item(), total_main_loss/total_count, total_detector_loss/total_count))
 
     return train_metrics
 
@@ -435,6 +474,7 @@ def adjust_learning_rate(optimizer, epoch):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     return lr
+
 # ------------------------------------------------------------------------------
 
 # ----------------------------- TRAINING LOOP ----------------------------------
@@ -443,6 +483,8 @@ def main():
     eval_df = pd.DataFrame()
 
     num_classes = 10
+    if args.extend_svhn:
+          num_classes = 20
     model = get_model(args.model, num_classes=num_classes,
                       normalize_input=args.normalize_input)
     if use_cuda:
@@ -451,13 +493,15 @@ def main():
                           momentum=args.momentum,
                           weight_decay=args.weight_decay,
                           nesterov=args.nesterov)
-
+    detector_model = None
+    if args.use_detector_training:
+        detector_model = load_detector_model(args)
     for epoch in range(1, args.epochs + 1):
         # adjust learning rate for SGD
         lr = adjust_learning_rate(optimizer, epoch)
         logger.info('Setting learning rate to %g' % lr)
         # adversarial training
-        train_data = train(args, model, device, train_loader, optimizer, epoch)
+        train_data = train(args, model, device, train_loader, optimizer, epoch, detector_model = detector_model)
         train_df = train_df.append(pd.DataFrame(train_data), ignore_index=True)
 
         # evaluation on natural examples

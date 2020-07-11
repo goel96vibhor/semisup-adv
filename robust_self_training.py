@@ -202,6 +202,8 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 # ------------------------------------------------------------------------------
 
 # --------------------------- DATA AUGMENTATION --------------------------------
+transform_test = transforms.Compose([
+    transforms.ToTensor()])
 if args.dataset == 'cifar10':
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -214,6 +216,12 @@ elif args.dataset == 'svhn':
     # crop because there are a lot of distractor digits in the edges of the
     # image
     transform_train = transforms.ToTensor()
+elif args.dataset == 'mnist' or args.dataset == 'qmnist':
+    mnist = torchvision.datasets.MNIST(download=True, train=True, root="./data").train_data.float()
+    print(mnist.mean()/255.0)
+    print(mnist.std() / 255.0)
+    transform_train = transforms.Compose([ transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))])
+    transform_test = transforms.Compose([ transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))])
 
 if args.autoaugment or args.cutout:
     assert (args.dataset == 'cifar10')
@@ -231,8 +239,6 @@ if args.autoaugment or args.cutout:
     logger.info('Applying aggressive training augmentation: %s'
                 % transform_train)
 
-transform_test = transforms.Compose([
-    transforms.ToTensor()])
 # ------------------------------------------------------------------------------
 
 # ----------------- DATASET WITH AUX PSEUDO-LABELED DATA -----------------------

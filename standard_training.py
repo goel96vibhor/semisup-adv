@@ -11,6 +11,7 @@ import argparse
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+from torchvision.datasets import CIFAR10, SVHN, MNIST, QMNIST
 from torchvision import transforms
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
@@ -21,7 +22,7 @@ import numpy as np
 from utils import get_model
 
 from losses import *
-from datasets import SemiSupervisedDataset, SemiSupervisedSampler, DATASETS
+from datasets import SemiSupervisedDataset, SemiSupervisedSampler
 from attack_pgd import pgd
 from smoothing import quick_smoothing
 
@@ -37,7 +38,7 @@ parser = argparse.ArgumentParser(
 
 # Dataset config
 parser.add_argument('--dataset', type=str, default='cifar10',
-                    choices=DATASETS,
+                    choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own', 'mnist'],
                     help='The dataset to use for training)')
 parser.add_argument('--data_dir', default='data', type=str,
                     help='Directory where datasets are located')
@@ -200,6 +201,9 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 # ------------------------------------------------------------------------------
 
 # --------------------------- DATA AUGMENTATION --------------------------------
+
+transform_test = transforms.Compose([
+    transforms.ToTensor()])
 if args.dataset == 'cifar10':
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -212,6 +216,12 @@ elif args.dataset == 'svhn':
     # crop because there are a lot of distractor digits in the edges of the
     # image
     transform_train = transforms.ToTensor()
+elif args.dataset == 'mnist' or args.dataset == 'qmnist' or args.dataset == 'qmnist_own':
+    mnist = MNIST(download=True, train=True, root=args.data_dir).train_data.float()
+    print(mnist.mean()/255.0)
+    print(mnist.std() / 255.0)
+    transform_train = transforms.Compose([ transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))])
+    transform_test = transforms.Compose([ transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))])
 
 if args.autoaugment or args.cutout:
     assert (args.dataset == 'cifar10')
@@ -229,8 +239,7 @@ if args.autoaugment or args.cutout:
     logger.info('Applying aggressive training augmentation: %s'
                 % transform_train)
 
-transform_test = transforms.Compose([
-    transforms.ToTensor()])
+
 # ------------------------------------------------------------------------------
 
 # ----------------- DATASET WITH AUX PSEUDO-LABELED DATA -----------------------
@@ -280,7 +289,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     train_metrics = []
     epsilon = args.epsilon
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target, indexes) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
@@ -353,7 +362,7 @@ def eval(args, model, device, eval_set, loader):
 
     model.eval()
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(loader):
+        for batch_idx, (data, target, indexes) in enumerate(loader):
             data, target = data.to(device), target.to(device)
             data, target = data[target != -1], target[target != -1]
             output = model(data)

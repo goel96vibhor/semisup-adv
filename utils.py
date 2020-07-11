@@ -9,11 +9,12 @@ import pickle
 
 import numpy as np
 import pathlib
-
+import logging
 from models.wideresnet import WideResNet
 from models.shake_shake import ShakeNet
 from models.cifar_resnet import ResNet
 from models.preact_resnet import PreActResNet18
+from models.mnist_resnet import mnist_resnet18, mnist_resnet34, mnist_resnet50, mnist_resnet101
 import torch
 import torch.nn.functional as F
 from torch.nn import Sequential, Module
@@ -21,7 +22,17 @@ from torch.nn import Sequential, Module
 cifar10_label_names = ['airplane', 'automobile', 'bird',
                        'cat', 'deer', 'dog', 'frog', 'horse',
                        'ship', 'truck']
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+def load_detector_model(args):
 
+    detector_model = get_model(args.detector_model,
+                      num_classes=11,
+                      normalize_input=False)
+    detector_model = torch.nn.DataParallel(detector_model.cuda())
+    checkpoint = torch.load(args.detector_model_path, map_location=torch.device(device))
+    detector_model.load_state_dict(checkpoint['state_dict'])
+    logging.info("Loaded detector model with epoch %d, accuracy %0.4f" %(checkpoint['epoch'], checkpoint['accuracy_vs']))
+    return detector_model
 
 def get_model(name, num_classes=10, normalize_input=False):
     name_parts = name.split('-')
@@ -39,9 +50,27 @@ def get_model(name, num_classes=10, normalize_input=False):
                               n_classes=num_classes,
                               ))
     elif name_parts[0] == 'resnet':
+        logging.info("using model resnet")
         model = ResNet(num_classes=num_classes, depth=int(name_parts[1]))
     elif name_parts[0] == 'PreActResnet18':
+        logging.info("using model preactresnet")
         model = PreActResNet18()
+    elif name_parts[0] == 'mnistresnet':
+            logging.info("using model mnistresnet")
+            kwargs = {'num_classes': 10}
+            pretrained = 'mnist'
+            if name == 'mnistresnet-18':
+                  model = mnist_resnet18()
+                  print("using model mnist_resnet18")
+            elif name == 'mnistresnet-34':
+                  model = mnist_resnet34()
+                  print("using model mnist_resnet34")
+            elif name == 'mnistresnet-50':
+                  model = mnist_resnet50()
+                  print("using model mnist_resnet50")
+            else:
+                  model = mnist_resnet101()
+                  print("using model mnist_resnet101")
     else:
         raise ValueError('Could not parse model name %s' % name)
 

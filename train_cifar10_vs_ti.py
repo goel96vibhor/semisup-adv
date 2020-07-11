@@ -15,9 +15,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
-
-from utils import get_model
-
+from torchvision import transforms
+from utils import *
+from dataloader import *
+from datasets import SemiSupervisedDataset, DATASETS
+from diff_distribution_dataload_helper import get_new_distribution_loader
 import pdb
 
 from dataloader import get_cifar10_vs_ti_loader
@@ -46,7 +48,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # model config
     parser.add_argument('--model', type=str, default='wrn-28-10')
-    
+    parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
+                              choices=['cifar10', 'svhn', 'custom', 'cinic'])
+    # detector model config
+    parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
+    parser.add_argument('--use-old-detector', default=0, type=int, help='Use detector model for evaluation')
+    parser.add_argument('--detector_model_path', default = 'selection_model/selection_model.pth', type = str, help='Model for attack evaluation')
     # run config
     parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--data_dir', type=str, default='data')
@@ -71,6 +78,9 @@ def parse_args():
     model_config = OrderedDict([
         ('name', args.model),
         ('n_classes', 11),
+        ('detector_model', args.detector_model), 
+        ('use_old_detector', args.use_old_detector), 
+        ('detector_model_path', args.detector_model_path)
     ])
 
     optim_config = OrderedDict([
@@ -104,7 +114,7 @@ def parse_args():
         ('run_config', run_config),
     ])
 
-    return config
+    return config, args
 
 
 class AverageMeter:
@@ -247,8 +257,13 @@ def test(epoch, model, criterion, test_loader, run_config):
     correct_c10_meter = AverageMeter()
     correct_c10_v_ti_meter = AverageMeter()
     start = time.time()
+    count_total = 0
+    c10_correct_total = 0
+    c10_count_total = 0
+    ti_count_total = 0
+    ti_correct_total = 0
     with torch.no_grad():
-        for step, (data, targets) in enumerate(test_loader):
+        for step, (data, targets, indexes) in enumerate(test_loader):
             data = data.to(device)
             targets = targets.to(device)
 
@@ -265,6 +280,11 @@ def test(epoch, model, criterion, test_loader, run_config):
             if is_c10.float().sum() > 0:
                 _, preds_c10 = torch.max(outputs[is_c10, :10], dim=1)
                 correct_c10_ = preds_c10.eq(targets[is_c10]).sum().item()
+            #     if step < 10:
+            #             print(preds_c10)
+            #             print(targets[is_c10])
+                c10_correct_total += correct_c10_
+                c10_count_total += is_c10.sum()
                 correct_c10_meter.update(correct_c10_, 1)
                 
             # cifar10 vs. TI accuracy
@@ -280,7 +300,10 @@ def test(epoch, model, criterion, test_loader, run_config):
     logger.info('Epoch {} Loss {:.4f} Accuracy inside C10 {:.4f},'
                 ' C10-vs-TI {:.4f}'.format(
         epoch, loss_meter.avg, accuracy_c10, accuracy_vs))
-
+    logger.info('Cifar10 total {} Cifar10_correct {} c10-vs-ti-total {},'
+                ' C10-vs-TI-correct {}'.format(
+        correct_c10_meter.sum, (test_targets < 10).sum(), correct_c10_v_ti_meter.sum, len(test_targets)))
+    logger.info('Cifar10 total %d, cifar 10 count %d' %(c10_correct_total, c10_count_total))
     elapsed = time.time() - start
     logger.info('Elapsed {:.2f}'.format(elapsed))
 
@@ -301,7 +324,7 @@ def test(epoch, model, criterion, test_loader, run_config):
 
 def main():
     # parse command line arguments
-    config = parse_args()
+    config, args = parse_args()
     logger.info(json.dumps(config, indent=2))
 
     run_config = config['run_config']
@@ -325,15 +348,31 @@ def main():
     outpath = outdir / 'config.json'
     with open(outpath, 'w') as fout:
         json.dump(config, fout, indent=2)
-
+    custom_testset = None
+    if args.dataset == 'custom':
+        custom_dataset = get_new_distribution_loader()
+        print("custom dataset loaded ....")
+        transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)), ])
+        custom_testset = SemiSupervisedDataset(base_dataset=args.dataset,
+                                          train=False, root='data',
+                                          download=True,
+                                          custom_dataset = custom_dataset,
+                                          transform=transform_test)
     # data loaders
-    train_loader, test_loader = get_cifar10_vs_ti_loader(
-        optim_config['batch_size'],
-        run_config['num_workers'],
-        run_config['device'] != 'cpu',
-        optim_config['cifar10_fraction'],
-        dataset_dir=data_config['dataset_dir'], 
-        logger=logger)
+    if args.dataset =='cinic': 
+        logger.info("Using cinic dataloader")
+        train_loader, test_loader = get_cinic_dataset_loader(optim_config['batch_size'], 
+                                                            run_config['num_workers'],
+                                                            run_config['device'] != 'cpu')
+    else:                                                        
+        train_loader, test_loader = get_cifar10_vs_ti_loader(
+            optim_config['batch_size'],
+            run_config['num_workers'],
+            run_config['device'] != 'cpu',
+            optim_config['cifar10_fraction'],
+            dataset_dir=data_config['dataset_dir'], 
+            custom_testset = custom_testset,
+            logger=logger)
     
     logger.info('Instantiated data loaders')
     # model
@@ -347,6 +386,11 @@ def main():
     criterion = nn.CrossEntropyLoss(reduction='mean',
                                     weight=torch.Tensor(
                                         [1] * 10 + [0.1])).cuda()
+    
+
+    if config['model_config']['use_old_detector']:
+        logging.info("using old detector model for evaluation")
+        model = load_detector_model(args)
 
     # optimizer
     optim_config['steps_per_epoch'] = len(train_loader)
@@ -362,27 +406,27 @@ def main():
     test(0, model, criterion, test_loader, run_config)
 
     epoch_logs = []
-    for epoch in range(1, optim_config['epochs'] + 1):
-        train_log = train(epoch, model, optimizer, scheduler, criterion,
-                          train_loader, run_config)
-        test_log = test(epoch, model, criterion, test_loader, run_config)
+#     for epoch in range(1, optim_config['epochs'] + 1):
+#         train_log = train(epoch, model, optimizer, scheduler, criterion,
+#                           train_loader, run_config)
+#         test_log = test(epoch, model, criterion, test_loader, run_config)
 
-        epoch_log = train_log.copy()
-        epoch_log.update(test_log)
-        epoch_logs.append(epoch_log)
-        with open(outdir / 'log.json', 'w') as fout:
-            json.dump(epoch_logs, fout, indent=2)
+#         epoch_log = train_log.copy()
+#         epoch_log.update(test_log)
+#         epoch_logs.append(epoch_log)
+#         with open(outdir / 'log.json', 'w') as fout:
+#             json.dump(epoch_logs, fout, indent=2)
 
-        if epoch % save_freq == 0 or epoch == optim_config['epochs']:
-            state = OrderedDict([
-                ('config', config),
-                ('state_dict', model.state_dict()),
-                ('optimizer', optimizer.state_dict()),
-                ('epoch', epoch),
-                ('accuracy_vs', test_log['test']['accuracy_vs']),
-            ])
-            model_path = outdir / ('model_state_epoch%d.pth' % epoch)
-            torch.save(state, model_path)
+#         if epoch % save_freq == 0 or epoch == optim_config['epochs']:
+#             state = OrderedDict([
+#                 ('config', config),
+#                 ('state_dict', model.state_dict()),
+#                 ('optimizer', optimizer.state_dict()),
+#                 ('epoch', epoch),
+#                 ('accuracy_vs', test_log['test']['accuracy_vs']),
+#             ])
+#             model_path = outdir / ('model_state_epoch%d.pth' % epoch)
+#             torch.save(state, model_path)
 
 
 if __name__ == '__main__':

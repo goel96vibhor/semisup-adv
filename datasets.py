@@ -2,16 +2,17 @@
 Datasets with unlabeled (or pseudo-labeled) data
 """
 
-from torchvision.datasets import CIFAR10, SVHN
+from torchvision.datasets import CIFAR10, SVHN, MNIST
 from torch.utils.data import Sampler, Dataset
 import torch
 import numpy as np
 import cifar_own
+import qmnist_own
 import os
 import pickle
-
+# from qmnist import QMNIST
 import logging
-
+from torchvision import transforms
 DATASETS = ['cifar10', 'svhn', 'cifar_own']
 
 
@@ -19,28 +20,71 @@ class SemiSupervisedDataset(Dataset):
     def __init__(self,
                  base_dataset='cifar10',
                  take_amount=None,
+                 extend_svhn = False,
+                 extend_svhn_fraction = 0.5,
                  take_amount_seed=13,
                  add_svhn_extra=False,
+                 qmnist10k=False,
                  aux_data_filename=None,
                  add_aux_labels=False,
                  aux_take_amount=None,
                  train=False, custom_dataset = None, 
                  **kwargs):
         """A dataset with auxiliary pseudo-labeled data"""
-
+        logger = logging.getLogger()
         if base_dataset == 'cifar10':
+            print("loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
         elif base_dataset == 'cifar_own':
             print("Using own cifar implementation")
             self.dataset = cifar_own.CIFAR10(train=train, **kwargs)
-        elif base_dataset == 'svhn':
-            if train:
-                self.dataset = SVHN(split='train', **kwargs)
+        elif base_dataset == 'qmnist_own':
+            if qmnist10k == True:
+                  self.dataset = qmnist_own.QMNIST(what='test10k', compat=False, **kwargs)
+                  self.dataset.targets = self.dataset.targets[:,0]
             else:
-                self.dataset = SVHN(split='test', **kwargs)
+                  self.dataset = qmnist_own.QMNIST(train=train, **kwargs)  
+            
+            # the qmnist testing set, do not download.
+        elif base_dataset == 'mnist':
+            self.dataset = MNIST(train=train, **kwargs)  
+        if extend_svhn or base_dataset == 'svhn':
+            print("loading svhn dataset")
+            transform_train = transforms.Compose([
+                  transforms.ToTensor(),
+            ])
+            if train:
+                svhn_dataset = SVHN(root = 'data', split='train', transform = transform_train)
+            else:
+                svhn_dataset = SVHN(root = 'data', split='test', transform = transform_train)
             # because torchvision is annoying
-            self.dataset.targets = self.dataset.labels
-            self.targets = list(self.targets)
+            svhn_dataset.targets = svhn_dataset.labels
+            svhn_targets = list(svhn_dataset.targets)
+            if base_dataset != 'svhn':
+                svhn_dataset.data = svhn_dataset.data.transpose(0, 2, 3, 1)
+                
+                svhn_size = int((extend_svhn_fraction/(1.0 - extend_svhn_fraction))*self.data.shape[0])
+                logger.info("Filtering svhn size: %d", svhn_size)
+                rng_state = np.random.get_state()
+                np.random.seed(take_amount_seed)
+                take_inds = np.random.choice(svhn_dataset.data.shape[0],
+                                             svhn_size, replace=False).astype(int)
+            #     print(take_inds.dtype)
+                np.random.set_state(rng_state)
+
+                
+                logger.info('Randomly taking only %d/%d examples from svhn set, seed=%d, indices=%s', svhn_size, svhn_dataset.data.shape[0],
+                            take_amount_seed, take_inds)
+                svhn_dataset.labels = np.array(svhn_dataset.labels)[take_inds]
+                svhn_dataset.data = np.array(svhn_dataset.data)[take_inds]
+                print(self.data.shape)
+                print(svhn_dataset.data.shape)
+                self.data = np.concatenate([self.data, svhn_dataset.data])
+                self.targets.extend([x + 10 for x in svhn_dataset.labels])
+                logger.info("Extended using svhn to size: %d", len(self.targets))
+            else:
+                self.dataset = svhn_dataset
+                self.targets = svhn_targets
 
             if train and add_svhn_extra:
                 svhn_extra = SVHN(split='extra', **kwargs)
@@ -48,8 +92,8 @@ class SemiSupervisedDataset(Dataset):
                 self.targets.extend(svhn_extra.labels)
         elif base_dataset == 'custom' and custom_dataset != None:
             self.dataset = custom_dataset
-        else:
-            raise ValueError('Dataset %s not supported' % base_dataset)
+      #   else:
+      #       raise ValueError('Dataset %s not supported' % base_dataset)
         self.base_dataset = base_dataset
         self.train = train
         self.sup_indices = list(range(len(self.targets)))
@@ -63,7 +107,7 @@ class SemiSupervisedDataset(Dataset):
             #     print(take_inds.dtype)
                 np.random.set_state(rng_state)
 
-                logger = logging.getLogger()
+                
                 logger.info('Randomly taking only %d/%d examples from training'
                             ' set, seed=%d, indices=%s',
                             take_amount, len(self.sup_indices),
@@ -76,6 +120,8 @@ class SemiSupervisedDataset(Dataset):
             self.unsup_indices = []
 
             if aux_data_filename is not None:
+                assert base_dataset != 'mnist', 'Error, cant have unlabeled data for mnist dataset'
+                assert base_dataset != 'qmnist', 'Error, cant have unlabeled data for qmnist dataset'
                 aux_path = os.path.join(kwargs['root'], aux_data_filename)
                 print("Loading data from %s" % aux_path)
                 with open(aux_path, 'rb') as f:
@@ -115,10 +161,12 @@ class SemiSupervisedDataset(Dataset):
 
             logger = logging.getLogger()
             logger.info("Training set")
+            logger.info("Base_dataset: %s", base_dataset)
             logger.info("Number of training samples: %d", len(self.targets))
             logger.info("Number of supervised samples: %d",
                         len(self.sup_indices))
             logger.info("Number of unsup samples: %d", len(self.unsup_indices))
+            logger.info("shape of targets: %s", np.shape(self.targets))
             logger.info("Label (and pseudo-label) histogram: %s",
                         tuple(
                             zip(*np.unique(self.targets, return_counts=True))))
@@ -131,12 +179,13 @@ class SemiSupervisedDataset(Dataset):
 
             logger = logging.getLogger()
             logger.info("Test set")
+            logger.info("Base_dataset: %s", base_dataset)
             logger.info("Number of samples: %d", len(self.targets))
             logger.info("Label histogram: %s",
                         tuple(
                             zip(*np.unique(self.targets, return_counts=True))))
             logger.info("Class of data: %s", self.data[1].dtype)
-            logger.info("Value of data: %s", self.data[1, 1, 1, :])
+            # logger.info("Value of data: %s", self.data[1, 1, 1, :])
             logger.info("Shape of data: %s", np.shape(self.data))
 
     @property
