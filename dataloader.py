@@ -132,7 +132,7 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu,
 
 def get_cinic_dataset_loader(batch_size, num_workers, use_gpu):
 
-      cinic_directory = '.'
+      cinic_directory = 'CINIC_dataset'
       cinic_mean = [0.47889522, 0.47227842, 0.43047404]
       cinic_std = [0.24205776, 0.23828046, 0.25874835]
       cinic_train = torch.utils.data.DataLoader(
