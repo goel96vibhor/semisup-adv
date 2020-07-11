@@ -5,4 +5,5 @@ __all__ = [
     'wideresnet',
     'shake_shake',
     'preact_resnet',
+    'mnist_resnet',
 ]
