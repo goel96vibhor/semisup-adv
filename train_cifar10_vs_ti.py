@@ -263,7 +263,8 @@ def test(epoch, model, criterion, test_loader, run_config):
     ti_count_total = 0
     ti_correct_total = 0
     with torch.no_grad():
-        for step, (data, targets, indexes) in enumerate(test_loader):
+        # Bug: when dataset is 'cifar-10', the dataloader doesn't return indices (remove _ to run)
+        for step, (data, targets, _) in enumerate(test_loader):
             data = data.to(device)
             targets = targets.to(device)
 
@@ -302,8 +303,7 @@ def test(epoch, model, criterion, test_loader, run_config):
         epoch, loss_meter.avg, accuracy_c10, accuracy_vs))
     logger.info('Cifar10 total {} Cifar10_correct {} c10-vs-ti-total {},'
                 ' C10-vs-TI-correct {}'.format(
-        correct_c10_meter.sum, (test_targets < 10).sum(), correct_c10_v_ti_meter.sum, len(test_targets)))
-    logger.info('Cifar10 total %d, cifar 10 count %d' %(c10_correct_total, c10_count_total))
+        (test_targets < 10).sum(), correct_c10_meter.sum, correct_c10_v_ti_meter.sum, len(test_targets)))
     elapsed = time.time() - start
     logger.info('Elapsed {:.2f}'.format(elapsed))
 
