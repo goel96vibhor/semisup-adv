@@ -14,8 +14,8 @@ import pickle
 import logging
 from torchvision import transforms
 DATASETS = ['cifar10', 'svhn', 'cifar_own']
-
-
+from diff_distribution_dataload_helper import *
+from dataset_utils.benrecht_cifar10 import BenRecht_cifar10_dataset
 class SemiSupervisedDataset(Dataset):
     def __init__(self,
                  base_dataset='cifar10',
@@ -35,6 +35,13 @@ class SemiSupervisedDataset(Dataset):
         if base_dataset == 'cifar10':
             print("loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
+        elif base_dataset == 'cinic10':
+            print("loading cinic 10 dataset") 
+            self.dataset = get_cinic_dataset(train = train)             
+            # self.dataset.targets = self.dataset.labels
+        elif base_dataset == 'benrecht_cifar10':
+            print("loading Ben recht cifar10 dataset")   
+            self.dataset = BenRecht_cifar10_dataset(train = train, **kwargs)
         elif base_dataset == 'cifar_own':
             print("Using own cifar implementation")
             self.dataset = cifar_own.CIFAR10(train=train, **kwargs)
@@ -185,7 +192,7 @@ class SemiSupervisedDataset(Dataset):
                         tuple(
                             zip(*np.unique(self.targets, return_counts=True))))
             logger.info("Class of data: %s", self.data[1].dtype)
-            # logger.info("Value of data: %s", self.data[1, 1, 1, :])
+            logger.info("Value of data: %s", self.data[1, 1, 1, :])
             logger.info("Shape of data: %s", np.shape(self.data))
 
     @property

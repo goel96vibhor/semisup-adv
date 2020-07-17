@@ -10,6 +10,8 @@ import pickle
 from torch.utils import data
 import pdb
 from torchvision import transforms
+# from torchvision.datasets import ImageFolder
+from imagefolder_loader import ImageFolder
 def get_loader(batch_size, num_workers, use_gpu):
     mean = np.array([0.4914, 0.4822, 0.4465])
     std = np.array([0.2470, 0.2435, 0.2616])
@@ -68,7 +70,7 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu,
     ])
     test_transform = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(mean, std),
+      #   torchvision.transforms.Normalize(mean, std),
     ])
 
     train_dataset = torchvision.datasets.CIFAR10(
@@ -136,11 +138,11 @@ def get_cinic_dataset_loader(batch_size, num_workers, use_gpu):
       cinic_mean = [0.47889522, 0.47227842, 0.43047404]
       cinic_std = [0.24205776, 0.23828046, 0.25874835]
       cinic_train = torch.utils.data.DataLoader(
-            torchvision.datasets.ImageFolder(cinic_directory + '/train',
+            ImageFolder(cinic_directory + '/train',
                   transform=transforms.Compose([
                         transforms.ToTensor(),
-                        transforms.Normalize(mean=cinic_mean,std=cinic_std)]
-                        )),
+                        transforms.Normalize(mean=cinic_mean,std=cinic_std)
+                        ])),
             
             batch_size=batch_size,
             shuffle=True,
@@ -149,11 +151,11 @@ def get_cinic_dataset_loader(batch_size, num_workers, use_gpu):
             drop_last=True,
       )
       cinic_test = torch.utils.data.DataLoader(
-            torchvision.datasets.ImageFolder(cinic_directory + '/test',
+            ImageFolder(cinic_directory + '/test',
                   transform=transforms.Compose([
                         transforms.ToTensor(),
-                        transforms.Normalize(mean=cinic_mean,std=cinic_std)]
-                        )),
+                        # transforms.Normalize(mean=cinic_mean,std=cinic_std)
+                        ])),
 
             batch_size=batch_size,
             num_workers=num_workers,

@@ -39,10 +39,16 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
             print("restart pgd attack: %d" %(restart))
             for data, target, indexes in test_loader:
                 batch_num = batch_num + 1
+                print_data = False
                 print(data.shape)
                 print(target.shape)
             #     print(data[1, 1, 1, :])
             #     print(target)
+                if batch_num == 1:
+                    print(data[1,:])
+                    print(indexes)
+                    print(target)
+                    print_data = True
                 if(batch_num%10==0):
                       print("batch_num: %d" %(batch_num))
                 if num_eval_batches and batch_num > num_eval_batches:
@@ -56,7 +62,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
                     epsilon=attack_params['epsilon'],
                     num_steps=attack_params['num_steps'],
                     step_size=attack_params['step_size'],
-                    random_start=attack_params['random_start'])
+                    random_start=attack_params['random_start'], print_data = print_data)
                 natural_num_correct += is_correct_natural.sum()
                 is_correct_adv_rows.append(is_correct_adv)
 
@@ -116,7 +122,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR Attack Evaluation')
     # dataset configs
     parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
-                              choices=['cifar10', 'svhn', 'custom'])
+                              choices=['cifar10', 'svhn', 'custom', 'benrecht_cifar10'])
     parser.add_argument('--qmnist10k', default=1, type=int, help='whether to use qmnist 10k or 60k dataset for evaluation')                        
     parser.add_argument('--output_suffix', default='_cifarv2', type=str, help='String to add to log filename')
     # model configs 
@@ -183,9 +189,14 @@ if __name__ == '__main__':
     dl_kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
     # set up data loader
-    custom_dataset = get_new_distribution_loader()
-    print("custom dataset loaded ....")
-    transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)), ])
+    custom_dataset =  None
+    if args.dataset == 'custom':
+            custom_dataset = get_new_distribution_loader()
+            print("custom dataset loaded ....")
+    transform_test = transforms.Compose([
+                                          transforms.ToTensor(), 
+                                          # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)), 
+                                        ])
     testset = SemiSupervisedDataset(base_dataset=args.dataset,
                                     train=False, root='data',
                                     download=True,
@@ -213,6 +224,8 @@ if __name__ == '__main__':
         state_dict = checkpoint.get('state_dict', checkpoint)
         num_classes = checkpoint.get('num_classes', 10)
         normalize_input = checkpoint.get('normalize_input', False)
+        print("checking if input normalized")
+        print(normalize_input)
         logging.info("using %s model for evaluation from path %s" %(args.model, args.model_path))
         model = get_model(args.model, num_classes=num_classes, normalize_input=normalize_input)
         if use_cuda:

@@ -10,13 +10,15 @@ import torch.optim as optim
 import logging
 
 
+
+
 def pgd(model,
         X,
         y,
         epsilon=8 / 255,
         num_steps=20,
         step_size=0.01,
-        random_start=True):
+        random_start=True, print_data = False):
     out = model(X)
     is_correct_natural = (out.max(1)[1] == y).float().cpu().numpy()
     perturbation = torch.zeros_like(X, requires_grad=True)
@@ -27,7 +29,14 @@ def pgd(model,
 
     is_correct_adv = []
     opt = optim.SGD([perturbation], lr=1e-3)  # This is just to clear the grad
-
+    if print_data:
+          print("printing inside pgd now")
+          print(X[1,:])
+          print(y[:])
+          print(out[1,:])
+          print(out.max(1)[1])
+          print("no printing now")
+          
     for _ in range(num_steps):
         opt.zero_grad()
 

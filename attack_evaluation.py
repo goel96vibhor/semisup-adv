@@ -29,6 +29,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
     evaluate model by white-box attack
     """
     model.eval()
+    
     if attack == 'pgd':
         restarts_matrices = []
         for restart in range(attack_params['num_restarts']):
@@ -39,6 +40,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
             print("restart pgd attack: %d" %(restart))
             for data, target, indexes in test_loader:
                 batch_num = batch_num + 1
+                print_data = False
             #     print(data.shape)
             #     print(target.shape)
             #     print(data[1, 1, 1, :])
@@ -50,13 +52,19 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
                 data, target = data.to(device), target.to(device)
                 count += len(target)
                 X, y = Variable(data, requires_grad=True), Variable(target)
+                
+                if batch_num == 1:
+                    print(X[1,:])
+                    print(indexes)
+                    print(target)
+                    print_data = True
                 # is_correct_adv has batch_size*num_iterations dimensions
                 is_correct_natural, is_correct_adv = pgd(
                     model, X, y,
                     epsilon=attack_params['epsilon'],
                     num_steps=attack_params['num_steps'],
                     step_size=attack_params['step_size'],
-                    random_start=attack_params['random_start'])
+                    random_start=attack_params['random_start'], print_data = print_data)
                 natural_num_correct += is_correct_natural.sum()
                 is_correct_adv_rows.append(is_correct_adv)
 
@@ -116,7 +124,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR Attack Evaluation')
     # dataset configs
     parser.add_argument('--dataset', type=str, default='cifar10', help='The dataset', 
-                              choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own','mnist', 'cinic'])
+                              choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own','mnist', 'cinic10'])
     parser.add_argument('--qmnist10k', default=1, type=int, help='whether to use qmnist 10k or 60k dataset for evaluation')
     parser.add_argument('--output_suffix', default='_cifarold', type=str, help='String to add to log filename')
     # model configs
@@ -186,9 +194,14 @@ if __name__ == '__main__':
           mnist = MNIST(download=True, train=True, root='data').train_data.float()
           print(mnist.mean()/255.0)
           print(mnist.std() / 255.0)
-          transform_test = transforms.Compose([ transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))])
+          transform_test = transforms.Compose([ 
+                                                transforms.Resize((224, 224)), transforms.ToTensor(), 
+                                                transforms.Normalize((mnist.mean()/255,), (mnist.std()/255,))
+                                             ])
     else:
-          transform_test = transforms.Compose([transforms.ToTensor(), ])
+          transform_test = transforms.Compose([
+                                                transforms.ToTensor(), 
+                                             ])
     testset = SemiSupervisedDataset(base_dataset=args.dataset,
                                     train=False, root='data',
                                     download=True,
@@ -206,13 +219,7 @@ if __name__ == '__main__':
 
     test_loader = torch.utils.data.DataLoader(testset,
                                               batch_size=args.batch_size,
-                                              shuffle=False, **dl_kwargs)
-
-    if args.dataset =='cinic': 
-        logger.info("Using cinic dataloader")
-        train_loader, test_loader = get_cinic_dataset_loader(optim_config['batch_size'], 
-                                                            run_config['num_workers'],
-                                                            run_config['device'] != 'cpu')                                              
+                                              shuffle=False, **dl_kwargs)                                             
 
     if args.use_detector_evaluation:
         logging.info("using detector model for evaluation")
@@ -222,6 +229,8 @@ if __name__ == '__main__':
         state_dict = checkpoint.get('state_dict', checkpoint)
         num_classes = checkpoint.get('num_classes', 10)
         normalize_input = checkpoint.get('normalize_input', False)
+        print("checking if input normalized")
+        print(normalize_input)
         logging.info("using %s model for evaluation from path %s" %(args.model, args.model_path))
         model = get_model(args.model, num_classes=num_classes, normalize_input=normalize_input)
         if use_cuda:
