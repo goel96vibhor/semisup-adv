@@ -1,0 +1,6 @@
+rst_augmented/
+data/
+qual/
+__pycache__
+selection_model/
+cifar10-vs-ti/

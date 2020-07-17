@@ -400,6 +400,7 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
     logger.info('Epoch {} Loss {:.4f} Accuracy inside C10 {:.4f},'
                 ' C10-vs-TI {:.4f}'.format(
         epoch, loss_meter.avg, accuracy_c10, accuracy_vs))
+
     logger.info('Cifar10 correct {} Cifar10 sum {} c10-vs-ti correct {},'
                 ' C10-vs-TI-sum {}'.format(
         correct_c10_meter.sum, (test_targets < 10).sum(), correct_c10_v_ti_meter.sum, len(test_targets)))
@@ -469,7 +470,7 @@ def main():
       #   mean, std = 
     # data loaders
     dl_kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    if args.dataset == 'benrecht_cifar10':
+    if args.dataset == 'benrecht_cifar10' or args.dataset == 'cifar10':
       #   custom_dataset = get_new_distribution_loader()
         print("custom dataset loaded ....")
         transform_test = transforms.Compose([transforms.ToTensor(), ])
@@ -479,14 +480,14 @@ def main():
                                           train=False, root='data',
                                           download=True,
                                           transform=transform_test)
-        testset = SemiSupervisedDataset(base_dataset=args.dataset,
+        trainset = SemiSupervisedDataset(base_dataset=args.dataset,
                                           train=True, root='data',
                                           download=True,
                                           transform=transform_test)                                  
         test_loader = torch.utils.data.DataLoader(testset,
                                               batch_size=args.batch_size,
                                               shuffle=False, **dl_kwargs)
-        train_loader = torch.utils.data.DataLoader(testset,
+        train_loader = torch.utils.data.DataLoader(trainset,
                                               batch_size=args.batch_size,
                                               shuffle=True, **dl_kwargs)                                                                          
     elif args.dataset =='cinic10': 
@@ -496,17 +497,6 @@ def main():
                                                             run_config['device'] != 'cpu')                         
         mean = torch.tensor([0.47889522, 0.47227842, 0.43047404])
         std = torch.tensor([0.24205776, 0.23828046, 0.25874835])
-    else:                                                        
-        mean = torch.tensor([0.4914, 0.4822, 0.4465])
-        std = torch.tensor([0.2470, 0.2435, 0.2616])
-        train_loader, test_loader = get_cifar10_vs_ti_loader(
-            optim_config['batch_size'],
-            run_config['num_workers'],
-            run_config['device'] != 'cpu',
-            optim_config['cifar10_fraction'],
-            dataset_dir=data_config['dataset_dir'], 
-            custom_testset = custom_testset,
-            logger=logger)
     
 #     normalize_func  = transforms.Normalize(mean.unsqueeze(0),std.unsqueeze(0))
 
