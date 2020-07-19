@@ -11,7 +11,6 @@ import pathlib
 import random
 import time
 import numpy as np
-import pickle
 
 import torch
 import torch.nn as nn
@@ -289,7 +288,7 @@ def train(epoch, model, optimizer, scheduler, criterion, train_loader,
     return train_log
 
 
-def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model = None):
+def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, base_model = None):
     logger.info('Test {}'.format(epoch))
 
     model.eval()
@@ -346,9 +345,6 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
                 print(preds)
                 # print(indexes)
                 print(targets)
-            
-            # print('Rohit')
-            # print(conf)
 
             is_pred_c10 = preds != 10
             is_pred_nonc10 = preds == 10
@@ -425,11 +421,10 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
                         %(base_c10_correct_total, base_predc10_correct_total, base_predti_correct_total))
 
     logger.info('CIFAR count: {}, Non-CIFAR count: {}'.format(len(cifar_conf), len(noncifar_conf)))
+    elapsed = time.time() - start
     logger.info('Elapsed {:.2f}'.format(elapsed))
     
-    hist_data = {'dataset': 'cifar', 'cifar': cifar_conf, 'noncifar': noncifar_conf}
-    with open('histdata_cifar.data', 'wb') as hist_file:
-        pickle.dump(hist_data, hist_file)
+    plot_histogram(cifar_conf, noncifar_conf, dataset)
 
     test_log = OrderedDict({
         'epoch':
@@ -550,7 +545,7 @@ def main():
     scheduler = get_cosine_annealing_scheduler(optimizer, optim_config)
 
     # run test before start training
-    test(0, model, criterion, test_loader, run_config, mean, std, base_model = base_model)
+    test(args.dataset, 0, model, criterion, test_loader, run_config, mean, std, base_model = base_model)
 
     epoch_logs = []
 #     for epoch in range(1, optim_config['epochs'] + 1):

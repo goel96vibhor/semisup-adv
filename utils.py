@@ -294,14 +294,3 @@ def plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset):
     fig.suptitle('Histogram for {} Dataset confidence distribution'.format(dataset), fontsize=14)
     # plt.show()
     plt.savefig('{}_hist.png'.format(dataset))
-
-
-def load_conf_vals_for_histogram(dataset):
-    import pickle
-
-    with open('histdata_{}.data'.format(dataset), 'rb') as filehandle:
-        conf_data = pickle.load(filehandle)
-        cifar_conf_vals = cinic['cifar']
-        noncifar_conf_vals = cinic['noncifar']
-    
-    plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset)
