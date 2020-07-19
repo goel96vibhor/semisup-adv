@@ -11,6 +11,7 @@ import pathlib
 import random
 import time
 import numpy as np
+import pickle
 
 import torch
 import torch.nn as nn
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 global_step = 0
 use_cuda = torch.cuda.is_available()
+
 
 def str2bool(s):
     if s.lower() == 'true':
@@ -83,7 +85,7 @@ def load_base_model(args):
 def parse_args():
     parser = argparse.ArgumentParser()
     # model config
-#     parser.add_argument('--model', type=str, default='wrn-28-10')
+    # parser.add_argument('--model', type=str, default='wrn-28-10')
     parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
                               choices=['cifar10', 'svhn', 'custom', 'cinic10', 'benrecht_cifar10'])
     # detector model config
@@ -116,7 +118,7 @@ def parse_args():
 
     # 10 CIFAR10 classes and one non-CIFAR10 class
     model_config = OrderedDict([
-      #   ('name', args.model),
+        # ('name', args.model),
         ('n_classes', 11),
         ('detector_model_name', args.detector_model), 
         ('use_old_detector', args.use_old_detector), 
@@ -292,7 +294,7 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
 
     model.eval()
     if base_model != None:
-          base_model.eval()
+        base_model.eval()
     device = torch.device(run_config['device'])
 
     loss_meter = AverageMeter()
@@ -317,6 +319,9 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
     base_c10_count_total = 0
 
     with torch.no_grad():
+        softmax = torch.nn.Softmax(dim=1)
+        cifar_conf = []
+        noncifar_conf = []
         for step, (data, targets, _) in enumerate(test_loader):
             data = data.to(device)
             targets = targets.to(device)
@@ -327,20 +332,29 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
             # outputs = model(normalize_func(tensor=data.squeeze(1)).reshape(data_shape))
             outputs = model(mean_std_normalize(data, mean, std))
             loss = criterion(outputs, targets)
-            _, preds = torch.max(outputs, dim=1)
+            outputs = softmax(outputs)
+
+            conf, preds = torch.max(outputs, dim=1)
 
             if base_model != None:
-                  base_outputs = base_model(data)
-                  _, base_preds = torch.max(base_outputs, dim=1)
-            
-            
-            
+                base_outputs = base_model(data)
+                _, base_preds = torch.max(base_outputs, dim=1)
+
             if step == 0:
-                  print(data[1,:])
-                  print(outputs[1,:])
-                  print(preds)
-                  # print(indexes)
-                  print(targets)
+                print(data[1,:])
+                print(outputs[1,:])
+                print(preds)
+                # print(indexes)
+                print(targets)
+            
+            # print('Rohit')
+            # print(conf)
+
+            is_pred_c10 = preds != 10
+            is_pred_nonc10 = preds == 10
+            cifar_conf.extend(conf[is_pred_c10].tolist())
+            noncifar_conf.extend(conf[is_pred_nonc10].tolist())
+
             loss_ = loss.item()
             num = data.size(0)
             loss_meter.update(loss_, num)
@@ -351,10 +365,10 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
                 _, preds_c10 = torch.max(outputs[is_c10, :10], dim=1)
                 correct_c10_ = preds_c10.eq(targets[is_c10]).sum().item()
                 if base_model != None:
-                  _, base_preds_c10 = torch.max(base_outputs[is_c10, :10], dim=1)
-                  base_c10_correct_total += base_preds_c10.eq(targets[is_c10]).sum().item() 
-                  base_c10_count_total += is_c10.sum()              
-                  if step == 0:
+                    _, base_preds_c10 = torch.max(base_outputs[is_c10, :10], dim=1)
+                    base_c10_correct_total += base_preds_c10.eq(targets[is_c10]).sum().item() 
+                    base_c10_count_total += is_c10.sum()              
+                    if step == 0:
                         print("-----------------------------------------------------")
                         print(base_preds_c10)   
                         print(preds_c10)
@@ -374,8 +388,8 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
                 _, preds_on_predc10 = torch.max(outputs[is_predc10, :10], dim=1)
                 correct_on_predc10_ = preds_on_predc10.eq(targets[is_predc10]).sum().item()
                 if base_model != None:
-                  _, base_preds_on_predc10 = torch.max(base_outputs[is_predc10, :10], dim=1)
-                  base_predc10_correct_total += base_preds_on_predc10.eq(targets[is_predc10]).sum().item()
+                    _, base_preds_on_predc10 = torch.max(base_outputs[is_predc10, :10], dim=1)
+                    base_predc10_correct_total += base_preds_on_predc10.eq(targets[is_predc10]).sum().item()
 
                 predc10_correct_total += correct_on_predc10_
                 predc10_count_total += is_predc10.sum()
@@ -386,8 +400,8 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
                 _, preds_on_predti = torch.max(outputs[is_predti, :10], dim=1)
                 pseudocorrect_on_predti_ = preds_on_predti.eq(targets[is_predti]).sum().item()
                 if base_model != None:
-                  _, base_preds_on_predti = torch.max(base_outputs[is_predti, :10], dim=1)
-                  base_predti_correct_total += base_preds_on_predti.eq(targets[is_predti]).sum().item()
+                    _, base_preds_on_predti = torch.max(base_outputs[is_predti, :10], dim=1)
+                    base_predti_correct_total += base_preds_on_predti.eq(targets[is_predti]).sum().item()
                 predti_pseudocorrect_total += pseudocorrect_on_predti_
                 predti_count_total += is_predti.sum()
                 pseudocorrect_on_predti_meter.update(pseudocorrect_on_predti_, 1)
@@ -400,7 +414,6 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
     logger.info('Epoch {} Loss {:.4f} Accuracy inside C10 {:.4f},'
                 ' C10-vs-TI {:.4f}'.format(
         epoch, loss_meter.avg, accuracy_c10, accuracy_vs))
-
     logger.info('Cifar10 correct {} Cifar10 sum {} c10-vs-ti correct {},'
                 ' C10-vs-TI-sum {}'.format(
         correct_c10_meter.sum, (test_targets < 10).sum(), correct_c10_v_ti_meter.sum, len(test_targets)))
@@ -411,9 +424,12 @@ def test(epoch, model, criterion, test_loader, run_config, mean, std, base_model
             logger.info('base cifar10 correct %d, base predicted c10 correct %d, base predicted TI correct %d' 
                         %(base_c10_correct_total, base_predc10_correct_total, base_predti_correct_total))
 
-    elapsed = time.time() - start
+    logger.info('CIFAR count: {}, Non-CIFAR count: {}'.format(len(cifar_conf), len(noncifar_conf)))
     logger.info('Elapsed {:.2f}'.format(elapsed))
-
+    
+    hist_data = {'dataset': 'cifar', 'cifar': cifar_conf, 'noncifar': noncifar_conf}
+    with open('histdata_cifar.data', 'wb') as hist_file:
+        pickle.dump(hist_data, hist_file)
 
     test_log = OrderedDict({
         'epoch':
@@ -456,18 +472,19 @@ def main():
     with open(outpath, 'w') as fout:
         json.dump(config, fout, indent=2)
     custom_testset = None
-#     if args.dataset == 'custom':
-#         custom_dataset = get_new_distribution_loader()
-#         print("custom dataset loaded ....")
-#         transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)), ])
-#         mean = torch.tensor([0.4914, 0.4822, 0.4465])
-#         std = torch.tensor([0.2470, 0.2435, 0.2616])
-#         custom_testset = SemiSupervisedDataset(base_dataset=args.dataset,
-#                                           train=False, root='data',
-#                                           download=True,
-#                                           custom_dataset = custom_dataset,
-#                                           transform=transform_test)
-      #   mean, std = 
+    # if args.dataset == 'custom':
+    #     custom_dataset = get_new_distribution_loader()
+    #     print("custom dataset loaded ....")
+    #     transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)), ])
+    #     mean = torch.tensor([0.4914, 0.4822, 0.4465])
+    #     std = torch.tensor([0.2470, 0.2435, 0.2616])
+    #     custom_testset = SemiSupervisedDataset(base_dataset=args.dataset,
+    #                                       train=False, root='data',
+    #                                       download=True,
+    #                                       custom_dataset = custom_dataset,
+    #                                       transform=transform_test)
+    #     mean, std = 
+
     # data loaders
     dl_kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     if args.dataset == 'benrecht_cifar10' or args.dataset == 'cifar10':

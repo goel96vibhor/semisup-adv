@@ -276,3 +276,32 @@ def load_pretrained_example_losses_from_file(model_dir, model_name, epoch_no = N
       return example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs
 
 
+def plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset):
+    import matplotlib.pyplot as plt
+
+    fig, axs = plt.subplots(1, 2, constrained_layout=True)
+
+    axs[0].hist(cifar_conf_vals, bins=100)
+    axs[0].set_title('CIFAR')
+    axs[0].set_xlabel('Confidence')
+    axs[0].set_ylabel('Number of examples')
+
+    axs[1].hist(noncifar_conf_vals, bins=100)
+    axs[1].set_title('Non-CIFAR')
+    axs[1].set_xlabel('Confidence')
+    axs[1].set_ylabel('Number of examples')
+
+    fig.suptitle('Histogram for {} Dataset confidence distribution'.format(dataset), fontsize=14)
+    # plt.show()
+    plt.savefig('{}_hist.png'.format(dataset))
+
+
+def load_conf_vals_for_histogram(dataset):
+    import pickle
+
+    with open('histdata_{}.data'.format(dataset), 'rb') as filehandle:
+        conf_data = pickle.load(filehandle)
+        cifar_conf_vals = cinic['cifar']
+        noncifar_conf_vals = cinic['noncifar']
+    
+    plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset)
