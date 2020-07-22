@@ -321,6 +321,8 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
         softmax = torch.nn.Softmax(dim=1)
         cifar_conf = []
         noncifar_conf = []
+
+        noncifar_all_confs = []
         for step, (data, targets, _) in enumerate(test_loader):
             data = data.to(device)
             targets = targets.to(device)
@@ -352,6 +354,9 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
             is_pred_nonc10 = preds == 10
             cifar_conf.extend(conf[is_pred_c10].tolist())
             noncifar_conf.extend(conf[is_pred_nonc10].tolist())
+
+            if len(noncifar_all_confs) < 30:
+                noncifar_all_confs.extend(outputs[is_pred_nonc10].tolist())
 
             loss_ = loss.item()
             num = data.size(0)
@@ -427,6 +432,9 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
     logger.info('Elapsed {:.2f}'.format(elapsed))
     
     plot_histogram(cifar_conf, noncifar_conf, dataset)
+
+    # print('Non cifar probabilities:')
+    # print(noncifar_all_confs)
 
     test_log = OrderedDict({
         'epoch':
