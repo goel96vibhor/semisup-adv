@@ -16,6 +16,9 @@ from torchvision import transforms
 DATASETS = ['cifar10', 'svhn', 'cifar_own']
 from diff_distribution_dataload_helper import *
 from dataset_utils.benrecht_cifar10 import BenRecht_cifar10_dataset
+from dataset_utils.tinyimages_80mn_loader import TinyImages
+
+
 class SemiSupervisedDataset(Dataset):
     def __init__(self,
                  base_dataset='cifar10',
@@ -35,6 +38,9 @@ class SemiSupervisedDataset(Dataset):
         if base_dataset == 'cifar10':
             print("loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
+        if base_dataset == 'tinyimages':
+            print("Loading TinyImages dataset")
+            self.dataset = TinyImages(**kwargs)
         elif base_dataset == 'cinic10':
             print("loading cinic 10 dataset") 
             self.dataset = get_cinic_dataset(train = train)             

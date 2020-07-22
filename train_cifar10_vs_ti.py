@@ -47,14 +47,14 @@ def str2bool(s):
 
 
 def mean_std_normalize(input, mean, std):
-      input = input.transpose(-1,-3).transpose(-2,-3).cuda()
-      assert input.shape[-1] == mean.shape[-1], "last input dimension does not match mean dimension"
-      assert input.shape[-1] == std.shape[-1], "last input dimension does not match std dimension"
-      mean = mean.repeat(*list(input.shape[:-1]), 1).cuda()
-      std = std.repeat(*list(input.shape[:-1]), 1).cuda()
-      output = input.sub(mean).div(std)
-      output = output.transpose(-1,-3).transpose(-2,-1)
-      return output
+    input = input.transpose(-1,-3).transpose(-2,-3).cuda()
+    assert input.shape[-1] == mean.shape[-1], "last input dimension does not match mean dimension"
+    assert input.shape[-1] == std.shape[-1], "last input dimension does not match std dimension"
+    mean = mean.repeat(*list(input.shape[:-1]), 1).cuda()
+    std = std.repeat(*list(input.shape[:-1]), 1).cuda()
+    output = input.sub(mean).div(std)
+    output = output.transpose(-1,-3).transpose(-2,-1)
+    return output
 
 def load_base_model(args):
         checkpoint = torch.load(args.base_model_path)
@@ -86,7 +86,7 @@ def parse_args():
     # model config
     # parser.add_argument('--model', type=str, default='wrn-28-10')
     parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
-                              choices=['cifar10', 'svhn', 'custom', 'cinic10', 'benrecht_cifar10'])
+                              choices=['cifar10', 'svhn', 'custom', 'cinic10', 'benrecht_cifar10', 'tinyimages'])
     # detector model config
     parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
     parser.add_argument('--use-old-detector', default=0, type=int, help='Use detector model for evaluation')
@@ -325,7 +325,9 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
             data = data.to(device)
             targets = targets.to(device)
 
-            # data_shape = torch.transpose(data,1,3).shape
+            # TODO: This is hacky rn. See the right way to load TinyImages
+            if dataset == 'tinyimages':
+                data = data.transpose(1, 3).type(torch.FloatTensor)
             # print(tuple(data.shape))
             # print(torch.transpose(data,1,3).view(-1,*tuple(data_shape[2:])).shape)
             # outputs = model(normalize_func(tensor=data.squeeze(1)).reshape(data_shape))
@@ -509,8 +511,17 @@ def main():
                                                             run_config['device'] != 'cpu')                         
         mean = torch.tensor([0.47889522, 0.47227842, 0.43047404])
         std = torch.tensor([0.24205776, 0.23828046, 0.25874835])
+    elif args.dataset == 'tinyimages':
+        print('Loading unlabeled dataset:', args.dataset, '...')
+        # transform_test = transforms.Compose([transforms.ToTensor(), ])
+        mean = torch.tensor([0.4914, 0.4822, 0.4465])
+        std = torch.tensor([0.2470, 0.2435, 0.2616])
+
+        testset = SemiSupervisedDataset(base_dataset=args.dataset, train=False)
+        train_loader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, **dl_kwargs)
+        test_loader = train_loader
     
-#     normalize_func  = transforms.Normalize(mean.unsqueeze(0),std.unsqueeze(0))
+    # normalize_func  = transforms.Normalize(mean.unsqueeze(0),std.unsqueeze(0))
 
     logger.info('Instantiated data loaders')
     # model
