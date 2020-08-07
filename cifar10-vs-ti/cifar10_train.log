@@ -1,0 +1,58 @@
+2020-07-24 07:37:43,558 | {
+  "model_config": {
+    "n_classes": 11,
+    "detector_model_name": "wrn-28-10",
+    "use_old_detector": 1,
+    "detector_model_path": "selection_model/selection_model.pth"
+  },
+  "optim_config": {
+    "epochs": 600,
+    "batch_size": 128,
+    "base_lr": 0.2,
+    "weight_decay": 0.0001,
+    "momentum": 0.9,
+    "nesterov": true,
+    "lr_min": 0,
+    "cifar10_fraction": 0.5
+  },
+  "data_config": {
+    "dataset": "CIFAR10VsTinyImages",
+    "dataset_dir": "data"
+  },
+  "run_config": {
+    "seed": 17,
+    "outdir": "cifar10-vs-ti/",
+    "num_workers": 7,
+    "device": "cuda",
+    "save_freq": 20
+  }
+}
+2020-07-24 07:37:44,614 | Training set
+2020-07-24 07:37:44,614 | Base_dataset: cifar10
+2020-07-24 07:37:44,615 | Number of training samples: 50000
+2020-07-24 07:37:44,615 | Number of supervised samples: 50000
+2020-07-24 07:37:44,615 | Number of unsup samples: 0
+2020-07-24 07:37:44,618 | shape of targets: (50000,)
+2020-07-24 07:37:44,623 | Label (and pseudo-label) histogram: ((0, 5000), (1, 5000), (2, 5000), (3, 5000), (4, 5000), (5, 5000), (6, 5000), (7, 5000), (8, 5000), (9, 5000))
+2020-07-24 07:37:44,623 | Shape of training data: (50000, 32, 32, 3)
+2020-07-24 07:37:45,424 | Training set
+2020-07-24 07:37:45,425 | Base_dataset: cifar10
+2020-07-24 07:37:45,425 | Number of training samples: 50000
+2020-07-24 07:37:45,425 | Number of supervised samples: 50000
+2020-07-24 07:37:45,425 | Number of unsup samples: 0
+2020-07-24 07:37:45,428 | shape of targets: (50000,)
+2020-07-24 07:37:45,432 | Label (and pseudo-label) histogram: ((0, 5000), (1, 5000), (2, 5000), (3, 5000), (4, 5000), (5, 5000), (6, 5000), (7, 5000), (8, 5000), (9, 5000))
+2020-07-24 07:37:45,433 | Shape of training data: (50000, 32, 32, 3)
+2020-07-24 07:37:45,433 | Instantiated data loaders
+2020-07-24 07:37:48,705 | n_params: 38120507
+2020-07-24 07:37:48,705 | using old detector model for evaluation
+2020-07-24 07:37:49,350 | Loaded detector model with epoch 520, accuracy 0.9379
+2020-07-24 07:37:49,462 | using resnet-20 model for evaluation from path rst_augmented/unsup_fraction_test/fraction_0.5/resnet-20/checkpoint-epoch50.pt
+2020-07-24 07:37:49,463 | using model resnet
+2020-07-24 07:37:49,480 | Test 0
+2020-07-24 07:38:28,530 | Epoch 0 Loss 0.0033 Accuracy inside C10 1.0000, C10-vs-TI 0.9997
+2020-07-24 07:38:28,531 | Cifar10 correct 50000 Cifar10 sum 50000 c10-vs-ti correct 49987, C10-vs-TI-sum 50000
+2020-07-24 07:38:28,531 | Cifar10 correct 50000, cifar 10 count 50000, predicted c10 correct 49987, predicted c10 count 49987, predicted ti pseudo correct 13 predicted ti count 13
+2020-07-24 07:38:28,531 | base cifar10 correct 48079, base predicted c10 correct 48069, base predicted TI correct 10
+2020-07-24 07:38:28,531 | CIFAR count: 49987, Non-CIFAR count: 13
+2020-07-24 07:38:31,549 | Elapsed 39.05
