@@ -20,7 +20,8 @@ def pgd(model,
         step_size=0.01,
         random_start=True, print_data = False):
     out = model(X)
-    is_correct_natural = (out.max(1)[1] == y).float().cpu().numpy()
+    pred_label = out.max(1)[1]
+    is_correct_natural = (pred_label == y).float().cpu().numpy()
     perturbation = torch.zeros_like(X, requires_grad=True)
 
     if random_start:
@@ -57,6 +58,6 @@ def pgd(model,
             [-1, 1]))
 
     is_correct_adv = np.concatenate(is_correct_adv, axis=1)
-    return is_correct_natural, is_correct_adv
+    return is_correct_natural, is_correct_adv, pred_label
 
 

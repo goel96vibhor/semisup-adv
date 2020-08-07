@@ -22,7 +22,7 @@ import numpy as np
 from utils import *
 
 from losses import *
-from datasets import SemiSupervisedDataset, SemiSupervisedSampler, DATASETS
+from datasets import SemiSupervisedDataset, SemiSupervisedSampler
 from attack_pgd import pgd
 from smoothing import quick_smoothing
 from scipy.stats import norm
@@ -37,7 +37,9 @@ parser = argparse.ArgumentParser(
     description='PyTorch TRADES Adversarial Training')
 
 # Dataset config
-parser.add_argument('--dataset', type=str, default='cifar10', choices=DATASETS, help='The dataset to use for training)')
+parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own','mnist', 
+                        'benrecht_cifar10', 'cinic10', 'cinic10_v2']
+                  , help='The dataset to use for training)')
 parser.add_argument('--data_dir', default='data', type=str, help='Directory where datasets are located')
 parser.add_argument('--svhn_extra', action='store_true', default=False, help='Adds the extra SVHN data')
 parser.add_argument('--extend_svhn', default=0, type=int, help='Whether to add supervised svhn data while training')
@@ -180,7 +182,7 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 # ------------------------------------------------------------------------------
 
 # --------------------------- DATA AUGMENTATION --------------------------------
-if args.dataset == 'cifar10':
+if args.dataset == 'cifar10' or args.dataset == 'cinic10':
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -236,7 +238,7 @@ if args.filter_unsup_data:
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
       print(trainset.unsup_indices[0:10])
-epoch_datapoint_count = 50000 
+epoch_datapoint_count = trainset.__len__()
 if args.train_take_amount is not None:
       epoch_datapoint_count = args.train_take_amount
 # elif args.extend_svhn:

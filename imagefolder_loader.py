@@ -52,6 +52,7 @@ def make_dataset(directory, class_to_idx, extensions=None, is_valid_file=None):
                 if is_valid_file(path):
                     item = path, class_index
                     instances.append(item)
+                    
     return instances
 
 

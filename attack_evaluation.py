@@ -21,6 +21,14 @@ from attack_pgd import pgd
 from attack_cw import cw
 import torch.backends.cudnn as cudnn
 from utils import *
+from dataloader import *
+
+
+def get_value_counts(pred, target):
+    class_labels = torch.arange(0,10)
+    class_counts = torch.stack([(target == x_u).sum() for x_u in class_labels])
+    class_corrects = torch.stack([( (pred == x_u) & (target == x_u)).sum() for x_u in class_labels])
+    return class_counts, class_corrects
 
 
 def eval_adv_test(model, device, test_loader, attack, attack_params,
@@ -29,6 +37,8 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
     evaluate model by white-box attack
     """
     model.eval()
+    classwise_counts = torch.zeros(10).to(device)
+    classwise_correct = torch.zeros(10).to(device)
     
     if attack == 'pgd':
         restarts_matrices = []
@@ -48,7 +58,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
                 if(batch_num%10==0):
                       print("batch_num: %d" %(batch_num))
                 if num_eval_batches and batch_num > num_eval_batches:
-                    break
+                    breakclasses
                 data, target = data.to(device), target.to(device)
                 count += len(target)
                 X, y = Variable(data, requires_grad=True), Variable(target)
@@ -59,12 +69,17 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
                     print(target)
                     print_data = True
                 # is_correct_adv has batch_size*num_iterations dimensions
-                is_correct_natural, is_correct_adv = pgd(
+                is_correct_natural, is_correct_adv, pred_label = pgd(
                     model, X, y,
                     epsilon=attack_params['epsilon'],
                     num_steps=attack_params['num_steps'],
                     step_size=attack_params['step_size'],
                     random_start=attack_params['random_start'], print_data = print_data)
+                
+                batch_class_counts, batch_class_corrects = get_value_counts(pred_label, target)
+                classwise_correct = classwise_correct.add(batch_class_corrects)
+                classwise_counts = classwise_counts.add(batch_class_counts)
+
                 natural_num_correct += is_correct_natural.sum()
                 is_correct_adv_rows.append(is_correct_adv)
 
@@ -77,6 +92,10 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
 
             logging.info("Accuracy after %d restarts: pgd: %.4g%%, natural: %.4g%%" %
                          (restart + 1, 100 * num_correct_adv / count, 100 * natural_num_correct/ count))
+            logging.info("Class counts %s" %(classwise_counts.data.tolist()))
+            logging.info("Class corrects %s" %(classwise_correct.data.tolist()))
+            classwise_acc = (classwise_correct.div(classwise_counts)*10000.0).round()/100.0
+            logging.info("Class accuracies %s" %(classwise_acc.data.tolist()))                         
             stats = {'attack': 'pgd',
                      'count': count,
                      'attack_params': attack_params,
@@ -124,9 +143,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR Attack Evaluation')
     # dataset configs
     parser.add_argument('--dataset', type=str, default='cifar10', help='The dataset', 
-                              choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own','mnist', 'cinic10'])
+                              choices=['cifar10','cifar_own','svhn', 'qmnist', 'qmnist_own','mnist', 'cinic10', 'cinic10_v2', 'benrecht_cifar10', 'tinyimages'])
     parser.add_argument('--qmnist10k', default=1, type=int, help='whether to use qmnist 10k or 60k dataset for evaluation')
-    parser.add_argument('--output_suffix', default='_cifarold', type=str, help='String to add to log filename')
+    parser.add_argument('--output_suffix', default='', type=str, help='String to add to log filename')
     # model configs
     parser.add_argument('--model_path', help='Model for attack evaluation')
     parser.add_argument('--model', '-m', default='wrn-28-10', type=str, help='Name of the model')
@@ -165,7 +184,8 @@ if __name__ == '__main__':
     else:
           output_dir, checkpoint_name = os.path.split(args.model_path)
           epoch = int(re.search('epoch(\d+)', checkpoint_name).group(1))
-          output_suffix = str(epoch) + output_suffix
+          output_suffix = output_suffix if output_suffix is not '' else args.dataset
+          output_suffix = str(epoch) + '_' + output_suffix
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(message)s",
@@ -200,26 +220,30 @@ if __name__ == '__main__':
                                              ])
     else:
           transform_test = transforms.Compose([
-                                                transforms.ToTensor(), 
-                                             ])
-    testset = SemiSupervisedDataset(base_dataset=args.dataset,
-                                    train=False, root='data',
-                                    download=True,
-                                    qmnist10k = args.qmnist10k,
-                                    transform=transform_test)
-
+                                                      transforms.ToTensor(), 
     
+                                             ])
+    if args.dataset != 'cinic10_v2':                                               
+      testset = SemiSupervisedDataset(base_dataset=args.dataset,
+                                          train=False, root='data',
+                                          download=True,
+                                          qmnist10k = args.qmnist10k,
+                                          transform=transform_test)    
 
-    if args.shuffle_testset:
-        np.random.seed(123)
-        logging.info("Permuting testset")
-        permutation = np.random.permutation(len(testset))
-        testset.data = testset.data[permutation, :]
-        testset.targets = [testset.targets[i] for i in permutation]
+      if args.shuffle_testset:
+            np.random.seed(123)
+            logging.info("Permuting testset")
+            permutation = np.random.permutation(len(testset))
+            testset.data = testset.data[permutation, :]
+            testset.targets = [testset.targets[i] for i in permutation]
 
-    test_loader = torch.utils.data.DataLoader(testset,
-                                              batch_size=args.batch_size,
-                                              shuffle=False, **dl_kwargs)                                             
+      test_loader = torch.utils.data.DataLoader(testset,
+                                                batch_size=args.batch_size,
+                                                shuffle=False, **dl_kwargs)   
+
+    if args.dataset == 'cinic10_v2':
+        print("loading cinic from dataloader")
+        train_loader, test_loader = get_cinic_dataset_loader(args.batch_size, 1, device != 'cpu')                                                                                                     
 
     if args.use_detector_evaluation:
         logging.info("using detector model for evaluation")

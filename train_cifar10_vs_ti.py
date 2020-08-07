@@ -22,16 +22,16 @@ from dataloader import *
 from datasets import SemiSupervisedDataset, DATASETS
 from diff_distribution_dataload_helper import get_new_distribution_loader
 import pdb
-
+import pandas as pd
 from dataloader import get_cifar10_vs_ti_loader
 
 torch.backends.cudnn.benchmark = True
 
-logging.basicConfig(
-    format='[%(asctime)s %(name)s %(levelname)s] - %(message)s',
-    datefmt='%Y/%m/%d %H:%M:%S',
-    level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(
+#     format='[%(asctime)s %(name)s %(levelname)s] - %(message)s',
+#     datefmt='%Y/%m/%d %H:%M:%S',
+#     level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 global_step = 0
 use_cuda = torch.cuda.is_available()
@@ -96,7 +96,8 @@ def parse_args():
     parser.add_argument('--base_model_path', help='Base Model path')
     parser.add_argument('--base_model', '-bm', default='resnet-20', type=str, help='Name of the base model')
     # run config
-    parser.add_argument('--output_dir', type=str, required=True)
+    parser.add_argument('--output_dir', default='selection_model',type=str, required=True)
+    parser.add_argument('--test_name', default='', help='Test name to give proper subdirectory to model for saving checkpoint')
     parser.add_argument('--data_dir', type=str, default='data')
     parser.add_argument('--seed', type=int, default=17)
     parser.add_argument('--num_workers', type=int, default=7)
@@ -198,7 +199,7 @@ def train(epoch, model, optimizer, scheduler, criterion, train_loader,
           run_config):
     global global_step
 
-    logger.info('Train {}'.format(epoch))
+    logging.info('Train {}'.format(epoch))
 
     model.train()
     device = torch.device(run_config['device'])
@@ -252,7 +253,7 @@ def train(epoch, model, optimizer, scheduler, criterion, train_loader,
 
 
         if step % 100 == 0:
-            logger.info('Epoch {} Step {}/{} '
+            logging.info('Epoch {} Step {}/{} '
                         'Loss {:.4f} ({:.4f}) '
                         'Accuracy {:.4f} ({:.4f}) '
                         'C10 Acc {:.4f} ({:.4f}) '
@@ -271,7 +272,7 @@ def train(epoch, model, optimizer, scheduler, criterion, train_loader,
             ))
 
     elapsed = time.time() - start
-    logger.info('Elapsed {:.2f}'.format(elapsed))
+    logging.info('Elapsed {:.2f}'.format(elapsed))
 
     train_log = OrderedDict({
         'epoch':
@@ -288,8 +289,8 @@ def train(epoch, model, optimizer, scheduler, criterion, train_loader,
     return train_log
 
 
-def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, base_model = None):
-    logger.info('Test {}'.format(epoch))
+def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, base_model = None, dataframe_file = None):
+    logging.info('Test {}'.format(epoch))
 
     model.eval()
     if base_model != None:
@@ -323,13 +324,19 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
         noncifar_conf = []
 
         noncifar_all_confs = []
-        for step, (data, targets, _) in enumerate(test_loader):
+
+        id_list = []
+        df = pd.DataFrame()
+        for step, (data, targets, indexes) in enumerate(test_loader):
             data = data.to(device)
             targets = targets.to(device)
 
+            id_list = np.array(indexes)
+            target_list = targets.cpu().detach().numpy()
             # TODO: This is hacky rn. See the right way to load TinyImages
-            if dataset == 'tinyimages':
-                data = data.transpose(1, 3).type(torch.FloatTensor)
+            # if dataset == 'tinyimages':
+            #     data = data.transpose(1, 3).type(torch.FloatTensor)
+            # print(data.shape)
             # print(tuple(data.shape))
             # print(torch.transpose(data,1,3).view(-1,*tuple(data_shape[2:])).shape)
             # outputs = model(normalize_func(tensor=data.squeeze(1)).reshape(data_shape))
@@ -341,6 +348,7 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
 
             if base_model != None:
                 base_outputs = base_model(data)
+                base_outputs = softmax(base_outputs)
                 _, base_preds = torch.max(base_outputs, dim=1)
 
             if step == 0:
@@ -409,27 +417,36 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
                 predti_count_total += is_predti.sum()
                 pseudocorrect_on_predti_meter.update(pseudocorrect_on_predti_, 1)
 
+            batch_df = pd.DataFrame(np.column_stack([id_list, target_list, outputs.cpu().detach().numpy(), base_outputs.cpu().detach().numpy(), 
+                                          preds.cpu().detach().numpy(), base_preds.cpu().detach().numpy(),
+                                          is_c10.cpu().detach().numpy(),is_predc10.cpu().detach().numpy(),
+                                          is_predti.cpu().detach().numpy()]))                                              
+            # print("Batch %d, batch df shape %s" %(step, str(batch_df.shape)))
+            df = df.append(batch_df)                                          
+
     test_targets = np.array(test_loader.dataset.targets)
     accuracy_c10 = (correct_c10_meter.sum /
                     (test_targets < 10).sum())
     accuracy_vs = (correct_c10_v_ti_meter.sum / len(test_targets))
 
-    logger.info('Epoch {} Loss {:.4f} Accuracy inside C10 {:.4f},'
+    logging.info('Epoch {} Loss {:.4f} Accuracy inside C10 {:.4f},'
                 ' C10-vs-TI {:.4f}'.format(
         epoch, loss_meter.avg, accuracy_c10, accuracy_vs))
-    logger.info('Cifar10 correct {} Cifar10 sum {} c10-vs-ti correct {},'
+    logging.info('Cifar10 correct {} Cifar10 sum {} c10-vs-ti correct {},'
                 ' C10-vs-TI-sum {}'.format(
         correct_c10_meter.sum, (test_targets < 10).sum(), correct_c10_v_ti_meter.sum, len(test_targets)))
-    logger.info('Cifar10 correct %d, cifar 10 count %d, predicted c10 correct %d, predicted c10 count %d, predicted ti pseudo correct %d ' \
+    logging.info('Cifar10 correct %d, cifar 10 count %d, predicted c10 correct %d, predicted c10 count %d, predicted ti pseudo correct %d ' \
                                                       'predicted ti count %d' %(c10_correct_total, c10_count_total, predc10_correct_total,
                                                       predc10_count_total, predti_pseudocorrect_total, predti_count_total))
     if base_model != None:
-            logger.info('base cifar10 correct %d, base predicted c10 correct %d, base predicted TI correct %d' 
+            logging.info('base cifar10 correct %d, base predicted c10 correct %d, base predicted TI correct %d' 
                         %(base_c10_correct_total, base_predc10_correct_total, base_predti_correct_total))
 
-    logger.info('CIFAR count: {}, Non-CIFAR count: {}'.format(len(cifar_conf), len(noncifar_conf)))
+    logging.info('CIFAR count: {}, Non-CIFAR count: {}'.format(len(cifar_conf), len(noncifar_conf)))
     elapsed = time.time() - start
-    logger.info('Elapsed {:.2f}'.format(elapsed))
+    df.to_csv(dataframe_file, index = False)
+    print("Writtern to df file %s with shape %s" %(dataframe_file, str(df.shape)))
+    logging.info('Elapsed {:.2f}'.format(elapsed))
     
     plot_histogram(cifar_conf, noncifar_conf, dataset)
 
@@ -453,6 +470,25 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
 def main():
     # parse command line arguments
     config, args = parse_args()
+
+    
+    output_dir = args.output_dir
+    if args.test_name == '':
+            output_dir = output_dir + '/' + args.test_name
+
+    if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+    
+    logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s | %(message)s",
+      handlers=[
+            logging.FileHandler(os.path.join(output_dir, args.dataset + '.log')),
+            logging.StreamHandler()
+    ])
+    logger = logging.getLogger()
+    dataframe_file = output_dir + '/' + args.dataset + '.csv'
+
     logger.info(json.dumps(config, indent=2))
 
     run_config = config['run_config']
@@ -492,7 +528,7 @@ def main():
 
     # data loaders
     dl_kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    if args.dataset == 'benrecht_cifar10' or args.dataset == 'cifar10':
+    if args.dataset == 'benrecht_cifar10' or args.dataset == 'cifar10' or args.dataset == 'cinic10':
       #   custom_dataset = get_new_distribution_loader()
         print("custom dataset loaded ....")
         transform_test = transforms.Compose([transforms.ToTensor(), ])
@@ -512,20 +548,13 @@ def main():
         train_loader = torch.utils.data.DataLoader(trainset,
                                               batch_size=args.batch_size,
                                               shuffle=True, **dl_kwargs)                                                                          
-    elif args.dataset =='cinic10': 
-        logger.info("Using cinic dataloader")
-        train_loader, test_loader = get_cinic_dataset_loader(optim_config['batch_size'], 
-                                                            run_config['num_workers'],
-                                                            run_config['device'] != 'cpu')                         
-        mean = torch.tensor([0.47889522, 0.47227842, 0.43047404])
-        std = torch.tensor([0.24205776, 0.23828046, 0.25874835])
     elif args.dataset == 'tinyimages':
         print('Loading unlabeled dataset:', args.dataset, '...')
-        # transform_test = transforms.Compose([transforms.ToTensor(), ])
+        transform_test = transforms.Compose([transforms.ToTensor(), ])
         mean = torch.tensor([0.4914, 0.4822, 0.4465])
         std = torch.tensor([0.2470, 0.2435, 0.2616])
 
-        testset = SemiSupervisedDataset(base_dataset=args.dataset, train=False)
+        testset = SemiSupervisedDataset(base_dataset=args.dataset, train=False, transform = transform_test)
         train_loader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, **dl_kwargs)
         test_loader = train_loader
     
@@ -564,7 +593,7 @@ def main():
     scheduler = get_cosine_annealing_scheduler(optimizer, optim_config)
 
     # run test before start training
-    test(args.dataset, 0, model, criterion, test_loader, run_config, mean, std, base_model = base_model)
+    test(args.dataset, 0, model, criterion, test_loader, run_config, mean, std, base_model = base_model, dataframe_file = dataframe_file)
 
     epoch_logs = []
 #     for epoch in range(1, optim_config['epochs'] + 1):

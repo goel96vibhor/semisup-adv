@@ -263,10 +263,11 @@ class CIFAR10(VisionDataset):
                     self.targets.extend(entry['labels'])
                 else:
                     self.targets.extend(entry['fine_labels'])
-
+        print(len(self.data))
         self.data = np.vstack(self.data).reshape(-1, 3, 32, 32)
+        print(self.data.shape)
         self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
-
+        print(self.data.shape)
         self._load_meta()
 
     def _load_meta(self):

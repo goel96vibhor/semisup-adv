@@ -4,21 +4,22 @@ from bisect import bisect_left
 
 class TinyImages(torch.utils.data.Dataset):
 
-    def __init__(self, transform=None, exclude_cifar=False):
+    def __init__(self, train = False, transform=None, target_transform = None, exclude_cifar=False):
 
         data_file = open('data/unlabeled_datasets/80M_Tiny_Images/tiny_50k.bin', "rb")
 
         def load_image(idx):
             data_file.seek(idx * 3072)
             data = data_file.read(3072)
-            return np.fromstring(data, dtype='uint8').reshape(32, 32, 3, order="F")
+            return np.fromstring(data, dtype='uint8').reshape(32, 32, 3, order="F"), 0
 
         self.load_image = load_image
         self.offset = 0     # offset index
-
+        self.train = train
         self.transform = transform
+        self.target_transform = target_transform
         self.exclude_cifar = exclude_cifar
-
+        print(self.transform)
         if exclude_cifar:
             self.cifar_idxs = []
             with open('data/unlabeled_datasets/80M_Tiny_Images/80mn_cifar_idxs.txt', 'r') as idxs:
@@ -46,7 +47,7 @@ class TinyImages(torch.utils.data.Dataset):
             # from PIL import Image
 
             for idx in range(50000):
-                dt, tgt = self.__getitem__(idx)
+                dt, tgt = self.load_image(idx)
 
                 # if idx < 5:
                 #     print('dt shape:', np.shape(dt))
@@ -55,6 +56,9 @@ class TinyImages(torch.utils.data.Dataset):
 
                 data.append(dt)
                 targets.append(tgt)
+            #     if idx<10:
+            #           print(dt)
+            #           print(tgt)
             return np.asarray(data), np.asarray(targets)
             # return data, targets
 
@@ -65,14 +69,24 @@ class TinyImages(torch.utils.data.Dataset):
         index = (index + self.offset) % 49999
 
         if self.exclude_cifar:
+            print("Excluding cifar")
             while self.in_cifar(index):
                 index = np.random.randint(50000)
 
-        img = self.load_image(index)
+      #   img = self.load_image(index)
+        
+        img, target = self.data[index], self.targets[index]
+
         if self.transform is not None:
             img = self.transform(img)
+        
+        if self.target_transform is not None:
+            target = self.target_transform(target)
 
-        return img, 0  # 0 is the class
+        return img, target  # 0 is the class
 
     def __len__(self):
         return 50000
+
+
+    

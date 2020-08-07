@@ -1,130 +1,141 @@
+# CINIC-10: CINIC-10 Is Not Imagenet or Cifar-10
+... but it is created therefrom.
 
-# Unlabeled Data Improves Adversarial Robustness  
-  
-This repository contains code for reproducing data and models from the NeurIPS 2019 paper [Unlabeled Data Improves Adversarial Robustness](https://arxiv.org/pdf/1905.13736.pdf) by Yair Carmon, Aditi Raghunathan, Ludwig Schmidt, Percy Liang and John C. Duchi. 
+## Purpose
+To understand the purpose of compiling CINIC-10, consider the following:
+- [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) is a commonly used benchmarking image dataset.
+- It would be advantageous to have an extended version of CIFAR-10 since 6000 samples per class is not always sufficient for deep learning tasks, or the computation of information theoretic quantities. 
+- [The Fall 2011 ImageNet release](http://www.image-net.org/) contains images within the same classes as CIFAR-10.
+- The gap in task-difficulties when training models using CIFAR-10 and CIFAR-100 is considerable, and more so the gap between these and models trained using ImageNet data.
+- A dataset that provides another milestone with regards to difficulty would be useful.
+- [ImageNet32x32 and ImageNet64x64](https://arxiv.org/abs/1707.08819) are downsampled versions of the ILSVRC ImageNet standard release. This certainly provides a milestone in that the image sizes are identical to CIFAR. However, this poses a *more challeging problem* than that of the original ImageNet data: the downsampled images have substantially less capacity for information. 
+- Some tasks - such as information theoretic analysis of deep learning - would be better suited to data-splits (train/validation/test, for example) that are equal. To create such a split requires more data than what is available in CIFAR-10 (and CIFAR-100)
+- Equally sized train-, validation-, and test-subsets give a more principled perspective of generalization performance.
 
-## CIFAR-10 unlabeled data and trained models  
+CINIC-10, *cynically minded pun regarding relatively longstanding benchmarking datasets only mildly intended and notwithstanding*, is constructed in such a way that it provides the same challenges as CIFAR-10 (regarding higher level descriptions - 10-way classification, for instance) but has more data for training, validation, and testing.
 
-Below are links to files containing our unlabeled data and pretrained models:
+## Details
 
-- [500K unlabeled data from TinyImages (with pseudo-labels)](https://drive.google.com/open?id=1LTw3Sb5QoiCCN-6Y5PEKkq9C9W60w-Hi)
-- [Trained *heuristic* defense RST_adv(50K+500K) model (see Table 1 in the paper)](https://drive.google.com/open?id=1S3in_jVYJ-YBe5-4D0N70R4bN82kP5U2)
-- [Trained *certified* defense RST_stab(50K+500K) model (see Figure 1 in the paper)](https://drive.google.com/open?id=1qNCQf1S47W9DPurUN4SKakmU87wE7ZRv)  
-  
-Additional files:  
-- [Trained data sourcing model  
- (Classifies between CIFAR-10 and non-CIFAR-10 content)](https://drive.google.com/open?id=1neK7UPhX7muJM7GvUtYSPZB3yan8iy5b) 
-- [TinyImages indices with keywords matching CIFAR-10  
-(from the CIFAR-10.1 paper)](https://drive.google.com/open?id=1OaAGYLxr62t7Zby6F0jScMORnadk6Oz2)
-- [Nearest neighbor L2 distances between CIFAR-10 test set and TinyImages](https://drive.google.com/open?id=1yMDnCfByqE6Y3l44844zF4fzjTyXaeKs) 
-  
-## Dependencies  
-To create a conda environment called semisup-adv containing all the dependencies, run  
-```  
-conda env create -f environment.yml  
-```  
-  
-Note: We tested this code on GPUs with 12GB of memory. Running on CPUs or GPUs with less memory might require adjustments.  
-  
-The code in this repo is based on code from the following sources:  
-- TRADES: https://github.com/yaodongyu/TRADES  
-- Randomized smoothing: https://github.com/locuslab/smoothing  
-- AutoAugment: https://github.com/DeepVoltaire/AutoAugment  
-- Cutout: https://github.com/uoguelph-mlrg/Cutout/blob/master/util/cutout.py  
-- FoolBox: https://github.com/bethgelab/foolbox  
-- ShakeShake: https://github.com/hysts/pytorch_shake_shake  
-- CIFAR-10.1: https://github.com/modestyachts/CIFAR-10.1
-  
-## Running robust self-training  
-To run robust self-training you will a pickle file containing pseudo-labeled data. You can download ```ti_500K_pseudo_labeled.pickle``` containing our 500K pseudo-labeled TinyImages, or you can generate one from scratch using the instructions below.  
-  
-### Adversarial training with TRADES  
-The following command performs adversarial training and produces a model  
-equivalent to  RST_adv(50K+500K) described in the paper.  
-```  
-python robust_self_training.py --aux_data_filename ti_500K_pseudo_labeled.pickle --distance l_inf --epsilon 0.031 --model_dir rst_adv 
-```  
-  
-When the script finishes running there will a be checkpoint file called `rst_adv/checkpoint-epoch200.pt`. The following commands runs a PGD attack (PGD_Ours from the paper) on the model  
-```  
-python attack_evaluation.py --model_path rst_adv/checkpoint-epoch200.pt --attack pgd --output_suffix pgd_ours  
-```  
-  
-To run the Carlini-Wanger attack on randomly selected 1000 images from the test set, use  
-```  
-python attack_evaluation.py --model_path rst_adv/checkpoint-epoch200.pt --attack cw --output_suffix cw --num_eval_batches 5 --shuffle_testset  
-```  
-  
-### Stability training  
-The following commands performs stability training and produces a model equivalent to  
-RST_stab(50K+500K) described in the paper.  
-```  
-python robust_self_training.py --aux_data_filename ti_500K_pseudo_labeled.pickle --distance l_2 --epsilon 0.25 --model_dir rst_stab --epochs 800
- ```
- 
-When the script finishes running there will a be checkpoint file called `rst_stab/checkpoint-epoch800.pt`.  The following commands runs randomized smoothing certification on the model, as described in the paper.  
-```  
-python smoothing_evaluation.py --model_path rst_stab/checkpoint-epoch800.pt --sigma 0.25  
+- CINIC-10 has a total of 270,000 images equally split amonst three subsets: train, validate, and test. This means that CINIC-10 has 4.5 times as many samples than CIFAR-10. 
+
+- In each subset (90,000 images) there are ten classes (identical to [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) classes). There are 9000 images per class per subset. Using the suggested data split (an equal three-way split), CINIC-10 has 1.8 times as many training samples than CIFAR-10. CINIC-10 is designed to be directly swappable with CIFAR-10.
+
+- The train and validation classes can be combined to form a larger train set. In this case, CINIC-10 would have 3.6 times as many training samples than CIFAR-10. A [notebook is provided](notebooks/enlarge-train-set.ipynb) to do this.
+
+- The means and standard deviations of the (*r*,*g*,*b*) channels was calculated to be:
+
+  ```python
+  cinic_mean_RGB = [0.47889522, 0.47227842, 0.43047404]
+  cinic_std_RGB = [0.24205776, 0.23828046, 0.25874835]
+  ```
+
+- CINIC-10 is saved to be [used with PyTorch data loaders](#data-loading). The following folder structure is used:
+
+    train/
+
+    train/airplane
+
+    train/automobile
+
+    train/...
+
+    valid/
+
+    valid/...
+
+    test/
+
+    test/...
+
+## Benchmarks
+
+Bechmarks were run on CINIC-10 in two configurations: (1) the suggested equal three-way split, trained on the train subset and tested on the test subset; and (2) trained on the combined train and validation sets, and tested on the test set. 
+
+Model definitions were copied from [here](https://github.com/kuangliu/pytorch-cifar/). They were all trained for 300 epochs, at an initial learning rate of 0.1, with a momentum multiplier of 0.9, weight decay with a multiplier of 0.0001, and batch size 64. The learning rate was cosine annealed to zero.
+
+#### Results when training on the train subset
+
+| Model              | No. Parameters |  Validation Error  |
+|--------------------|----------------|--------------------|
+| VGG-16             |  14.7M         | 15.25              |
+| ResNet-18          |  11.2M         | 12.42              |
+| ResNet-18 (preact) |  11.2M         | 12.84              |
+| GoogLeNet          |   6.2M         | 11.54              |
+| ResNeXt29_2x64d    |   9.2M         | 11.66              |
+| Mobilenet          |   3.2M         | 19.55              |
+
+### Results when training on the train + validation subset
+
+For comparison with CIFAR-10 models, these were trained 5 times with different seeds. The error is listed to include standard deviation over those runs:
+
+| Model              | No. Parameters |  Validation Error  |
+|--------------------|----------------|--------------------|
+| VGG-16             |  14.7M         | 12.23 +/- 0.16     |
+| ResNet-18          |  11.2M         |  9.73 +/- 0.05     |
+| ResNet-18 (preact) |  11.2M         | 10.10 +/- 0.08     |
+| GoogLeNet          |   6.2M         |  8.83 +/- 0.12     |
+| ResNeXt29_2x64d    |   9.2M         |  8.55 +/- 0.15     |
+| Densenet-121       |   7.0M         |  8.74 +/- 0.16     |
+| Mobilenet          |   3.2M         | 18.00 +/- 0.16     |
+
+
+
+## Construction
+1. The original CIFAR-10 data was processed into image format (.png) and stored as follows:
+      ``` [$set$/$class_name$/cifar-10-$origin$-$index$.png]```
+
+      - where ```$set$``` is either train, valid or test. ```$class_name$``` refers to the [CIFAR-10 classes](https://www.cs.toronto.edu/~kriz/cifar.html) (airplane, automobile, etc.), ```$origin$``` the set from which the image was taken (train or test), and ```$index$``` the original index of this images within the set it comes from. 
+      - **NOTES**:
+           - Storing in this manner enables the user to perfectly reconstruct the CIFAR-10 dataset from CINIC-10. We have provided [a notebook](notebooks/recover-cifar-and-validate.ipynb)  that demonstrates how to do this and validates that the images are identical.
+           - The entirety of the original CIFAR-10 *test* set is within the abovementioned *new* *test* set. The remaining elements of this *new test* set were randomly selected from the CIFAR-10 train set. The *new* train and validation sets are a random split of the remaining elements therein.
+
+         This is an equal split of the CIFAR-10 data: 20000 images per set; 2000 images per class within set; and an equal distribution of CIFAR-10 data among all three sets.
+
+2. The relevant synonym sets (synsets) within the Fall 2011 release of the ImageNet Database were identified and collected. These *synset-groups* are listed in [**synsets-to-cifar-10-classes.txt**](synsets-to-cifar-10-classes.txt). The mapping from sysnsets to CINIC-10 is listed in [**imagenet-contributors.csv**](imagenet-contributors.csv) 
+
+3. These synsets were downloaded using [Imagenet Utils](https://github.com/tzutalin/ImageNet_Utils). Note that some *.tar* downloads failed (with a 0 Byte download) even after repeated retries. This is not exceedingly deterimental as a subset of the downloaded images was taken.
+
+4. The *.tar* files were extracted, the *.JPEG* images were read using the Pillow Python library, and converted to 32 by 32 pixel images with the 'Box' algorithm from the [Pillow library](https://python-pillow.org) (in the same manner as [Imagenet32x32](https://patrykchrabaszcz.github.io/Imagenet32/), for consistency).
+
+5. The **lowest** number of CIFAR10 **class-relevant** samples from these Imagenet *synset-groups* samples was observed to be 21939 in the 'truck' class. Therefore, 21000 samples were randomly selected from each *synset-group* to compile CINIC-10 by augmenting the CIFAR-10 data.
+
+6. Finally, these 21000 samples were randomly distributed (but can be recovered using the filename) within the *new* train, validation, and test sets, storing as follows:
+      ``` [$set$/$class_name$/$synset$_$number$.png]```
+
+      - where ```$set$``` is either train, valid or test. ```$class_name$``` refers to the [CIFAR-10 classes](https://www.cs.toronto.edu/~kriz/cifar.html) (airplane, automobile, etc.). ```$synset$``` indicates which Imagenet synset this image came from and ```$number$``` is the image number directly associated with the original *.JPEG* images. 
+      - **NOTES**:
+           - The image filenames themselves, ```$synset$_$number$.png```, are identical to the filenames of the original *.JPEG* images from which these downsampled *.png* images were computed. 
+           - This naming structure allows the user to identify exactly the origin of all images. 
+
+7. The result is a dataset that consists of **270000 images** (60000 from the original CIFAR-10 data and the remaining from Imagenet), split into three equal-sized train, validation, and test subsets. Thus, each class within these subsets contains 9000 images. 
+
+## Usage
+
+### Download
+
+TODO
+
+### Data loading
+
+The simplest way to use CINIC-10 is with a [PyTorch](https://pytorch.org/) data loader, as follows:
+
+``` python
+import torchvision
+import torchvision.transforms as transforms
+
+cinic_directory = '/path/to/cinic/directory'
+cinic_mean = [0.47889522, 0.47227842, 0.43047404]
+cinic_std = [0.24205776, 0.23828046, 0.25874835]
+cinic_train = torch.utils.data.DataLoader(
+    torchvision.datasets.ImageFolder(cinic_directory + '/train',
+    	transform=transforms.Compose([transforms.ToTensor(),
+        transforms.Normalize(mean=cinic_mean,std=cinic_std)])),
+    batch_size=128, shuffle=True)
 ```
-  
-## Creating the unlabeled data from scratch  
 
-Note: creating the unlabeled data from scratch takes a while; plan for three days at least.
+### Classification
+The suggested dataset can be used *as is* in a standard classification set-up. Further, the train and validation subsets can be combined ([using symbolic links, into a new data folder](notebooks/enlarge-train-set.ipynb))  to more closely match the data split choice of CIFAR-10 (one large train set, and one smaller test set).
 
-### Step zero: Downloading data 
-Create a data directory that has the following files: 
-- [tiny_images.bin](http://horatio.cs.nyu.edu/mit/tiny/data/tiny_images.bin)
-- [TinyImages keyword information](https://drive.google.com/open?id=1OaAGYLxr62t7Zby6F0jScMORnadk6Oz2)
+### Distribution shift
 
-### Step one: Tiny Image preliminaries  
-In this step, we do the following two preliminary steps.   
-1) Compute distances from all the TinyImages to CIFAR-10 test set, in order to ensure we do *not* add any images from the test set to the unlabeled data sourced from TinyImages.   
-2) Create train/test data for selection model (See Appendix B.6)  
-    
-Note that the data directory should contain the following files: `tiny_images.bin`, `cifar10_keywords_unique_v7.json`, `tinyimage_subset_indices_v7.json`  and `tinyimage_subset_data_v7.pickle`.
-  
-Here is an example run.  
- ``` 
- python tinyimages_preliminaries.py --data_dir ../data/ --output_dir ../data
- ```  
-  
-### Step two: Train a selection model
-Here we train the data selection model described in Appendix B.6 of the paper.  Note that `data_dir` should contain the following files: `tiny_images.bin`, `ti_vs_cifar_inds.pickle` (from above).   
-  
-Here is an example run.   
-
- ```
- python train_cifar10_vs_ti.py --output_dir ../cifar10-vs-ti/ --data_dir ../data/  
-```  
-  
-  
-### Step three:  Selecting unlabeled data and removing CIFAR-10 test set   
-We apply the model trained above on TinyImages and select images based on the predictions, while making sure to remove all images that are close (in l2 distance) to the CIFAR-10 test set.   
-
- ```
-python tinyimages_prediction.py --model_path ../cifar10-vs-ti/model_state_epoch520.pth --data_dir ../data --output_dir ../data/ --output_filename ti_500K_unlabeled.pickle  
- ```  
- 
-### Step four: Training a vanilla model on CIFAR-10 
-We now train a model (Wide ResNet 28-10) on CIFAR-10 training set.   
-  
- ```
-python robust_self_training.py --distance l_2 --beta 0 --unsup_fraction 0 --model_dir vanilla  
- ```
-
-### Step five: Generating pseudo-labels 
-As a final step, we generate pseudo-labels by applying the classifier from Step 4 on the unlabeled data sourced in Step 3.   
-  
- ```
-python generate_pseudolabels.py --model_dir ../vanilla  --model_epoch 200 --data_dir ../data/ --data_filename ti_500K_unlabeled.pickle --output_dir ../data/ --output_filename ti_500K_pseudo_labeled.pickle  
- ``` 
-
- ## Reference  
-```  
-@inproceedings{carmon2019unlabeled,  
-author = {Yair Carmon and Aditi Raghunathan and Ludwig Schmidt and Percy Liang and John Duchi},  
-title = {Unlabeled Data Improves Adversarial Robustness},  
-year = 2019,  
-booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},  
-}  
-```
+Since CINIC-10 is constructed from two different sources, it is not a guarantee that the constituent elements are drawn from the same distribution. This is one of the motivations for an equal split of the CIFAR-10 data between each subset of CINIC-10. This property can, however, be leveraged to understand how well models cope with samples drawn from similar but not identical distributions. A [notebook](notebooks/imagenet-extraction.ipynb) is provided to extract the imagenet samples from CINIC-10, and [another](notebooks/cifar-extraction.ipynb) to extract the CIFAR-10 samples. 
