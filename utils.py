@@ -24,13 +24,30 @@ cifar10_label_names = ['airplane', 'automobile', 'bird',
                        'ship', 'truck']
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 def load_detector_model(args):
-
+    
     detector_model = get_model(args.detector_model,
                       num_classes=11,
                       normalize_input=False)
-    detector_model = torch.nn.DataParallel(detector_model.cuda())
-    checkpoint = torch.load(args.detector_model_path, map_location=torch.device(device))
-    detector_model.load_state_dict(checkpoint['state_dict'])
+#     detector_model = torch.nn.DataParallel(detector_model).cuda()
+    checkpoint = torch.load(args.detector_model_path)
+    state_dict = checkpoint.get('state_dict', checkpoint)
+    def strip_data_parallel(s):
+                  if s.startswith('module.1'):
+                        return s[len('module.1.'):]
+                  elif s.startswith('module.0'):
+                        return None
+                  elif s.startswith('module'):
+                        return s[len('module.'):]
+                  else:
+                        return s
+    new_state_dict = {}
+    for k,v in state_dict.items():
+          k_new = strip_data_parallel(k)
+          if k_new:
+                new_state_dict[k_new] = v
+#     state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
+    detector_model.load_state_dict(new_state_dict)
+    detector_model = torch.nn.DataParallel(detector_model).cuda()
     logging.info("Loaded detector model with epoch %d, accuracy %0.4f" %(checkpoint['epoch'], checkpoint['accuracy_vs']))
     return detector_model
 
@@ -146,6 +163,7 @@ def load_tinyimage_subset(other_data_path,
             assert entry['tinyimage_index'] in image_data
             num_entries += 1
     assert num_entries == len(image_data)
+    print('Loaded indices from file {} with size {}'.format(indices_filepath,num_entries))
     return indices, image_data
 
 

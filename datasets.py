@@ -17,7 +17,7 @@ DATASETS = ['cifar10', 'svhn', 'cifar_own']
 from diff_distribution_dataload_helper import *
 from dataset_utils.benrecht_cifar10 import BenRecht_cifar10_dataset
 from dataset_utils.tinyimages_80mn_loader import TinyImages
-
+from dataset_utils.empty_dataset import Empty_Dataset
 
 class SemiSupervisedDataset(Dataset):
     def __init__(self,
@@ -38,7 +38,7 @@ class SemiSupervisedDataset(Dataset):
         if base_dataset == 'cifar10':
             print("loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
-        if base_dataset == 'tinyimages':
+        elif base_dataset == 'tinyimages':
             print("Loading TinyImages dataset")
             self.dataset = TinyImages(**kwargs)
         elif base_dataset == 'cinic10':
@@ -60,7 +60,14 @@ class SemiSupervisedDataset(Dataset):
             
             # the qmnist testing set, do not download.
         elif base_dataset == 'mnist':
-            self.dataset = MNIST(train=train, **kwargs)  
+            self.dataset = MNIST(train=train, **kwargs) 
+        elif base_dataset == 'custom' and custom_dataset != None:
+            self.dataset = custom_dataset
+        elif base_dataset == 'unlabeled_percy_500k':
+            print("loading unlabeled percy dataset. No base dataset loaded ..........")
+            self.dataset = Empty_Dataset(**kwargs)
+            self.targets = np.empty(0,'long')
+            self.data = np.empty([0,32,32,3], 'uint8')
         if extend_svhn or base_dataset == 'svhn':
             print("loading svhn dataset")
             transform_train = transforms.Compose([
@@ -103,8 +110,7 @@ class SemiSupervisedDataset(Dataset):
                 svhn_extra = SVHN(split='extra', **kwargs)
                 self.data = np.concatenate([self.data, svhn_extra.data])
                 self.targets.extend(svhn_extra.labels)
-        elif base_dataset == 'custom' and custom_dataset != None:
-            self.dataset = custom_dataset
+        
       #   else:
       #       raise ValueError('Dataset %s not supported' % base_dataset)
         self.base_dataset = base_dataset

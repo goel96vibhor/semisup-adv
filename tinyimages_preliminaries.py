@@ -61,6 +61,11 @@ parser.add_argument('--print_freq', '-s', default=5, type=int, metavar='N',
 parser.add_argument('--num_workers', type=int, default=80,
                     help='Number of workers for data loading')
 
+parser.add_argument('--num_images', type=int, default=500000,
+                    help='Number of images in dataset')
+parser.add_argument('--start_index', type=int, default=0,
+                    help='Starting index of image')
+
 
 # parse args, etc.
 args = parser.parse_args()
@@ -138,7 +143,8 @@ def main():
     logging.info('Distance to CIFAR-10 test set')
     logging.info('Args: %s', args)
 
-    num_images = 79302017
+#     num_images = 79302017
+    num_images = args.num_images
     if args.features == 'raw':
         data_path = os.path.join(args.data_dir, 'tiny_images.bin')
         data_dtype = 'uint8'
@@ -161,6 +167,8 @@ def main():
         logging.info('Getting CIFAR10 test set images')
         keyword_data = load_cifar10_keywords(args.data_dir)
         cifar10_test_indices = np.array([x['nn_index'] for x in keyword_data[-10000:]])
+        cifar10_test_indices = cifar10_test_indices[cifar10_test_indices < num_images]
+        print("Cifar 10 test size %d" %(cifar10_test_indices.size))
         cifar10_test_data = to_tensor(data[cifar10_test_indices], data.dtype)
     
         logging.info('Initializing NN computation')
@@ -187,6 +195,7 @@ def main():
                               increment / elapsed))
                 start_time = time.time()
                 prev_count = count
+                print(i)
             
         # save the results
         out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test.pickle')
@@ -209,15 +218,20 @@ def main():
         # put TI metadata in more convenient form
         tinyimage_metadata = pd.DataFrame()
         for key, val in tinyimage_indices.items():
+            # print(val)
+            # if val['tinyimage_index'] >= num_images:
+            #       continue
+            # else:
+            #       print(val['tinyimage_index'])
             df = pd.DataFrame(val)
             df['keyword'] = key
             tinyimage_metadata = tinyimage_metadata.append(df, ignore_index=True)
         
         is_valid = np.ones(num_images, dtype=bool)
-        is_valid[tinyimage_metadata.tinyimage_index.values] = 0
+        is_valid[tinyimage_metadata.tinyimage_index.values[tinyimage_metadata.tinyimage_index.values <= num_images]] = 0
         valid_indices = np.where(is_valid)[0]
         num_valid = len(valid_indices)
-
+        print("num of Valid indices %d" %(num_valid))
         # choose indices at random
         np.random.seed(13)
         num_ti_train = int(1e6)

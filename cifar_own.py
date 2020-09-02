@@ -231,7 +231,7 @@ class CIFAR10(VisionDataset):
     }
 
     def __init__(self, root, train=True, transform=None, target_transform=None,
-                 download=False):
+                 download=False, even_odd = -1):
 
         super(CIFAR10, self).__init__(root, transform=transform,
                                       target_transform=target_transform)
@@ -268,6 +268,11 @@ class CIFAR10(VisionDataset):
         print(self.data.shape)
         self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
         print(self.data.shape)
+        if even_odd >=0 :
+              even_odd = even_odd%2
+              self.data = self.data[even_odd::2]
+              self.targets = self.targets[even_odd::2]
+              print("filtering even odd=%d for cifar dataset with remaning shape %s" %(even_odd, self.data.shape))
         self._load_meta()
 
     def _load_meta(self):
@@ -293,7 +298,8 @@ class CIFAR10(VisionDataset):
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
         img = Image.fromarray(img)
-
+        if index < 10:
+              img.save('selection_model/for_view/cifar10/'+str(index)+'.png')
         if self.transform is not None:
             img = self.transform(img)
 

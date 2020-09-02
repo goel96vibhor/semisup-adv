@@ -25,7 +25,7 @@ class BenRecht_cifar10_dataset(Dataset):
             self.transform = transform
             self.target_transform = target_transform
             self.train = train
-
+            print(transform)
             self.mean = np.array([0.4914, 0.4822, 0.4465])
             self.std = np.array([0.2470, 0.2435, 0.2616])
 
@@ -38,7 +38,9 @@ class BenRecht_cifar10_dataset(Dataset):
             # img = Image.fromarray(img)
 
             if self.transform is not None:
+                  # print(img.dtype)
                   img = self.transform(img)
+                  # print(img.dtype)
 
             if self.target_transform is not None:
                   target = self.target_transform(target)
