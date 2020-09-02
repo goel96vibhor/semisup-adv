@@ -8,6 +8,7 @@ import os
 import pickle
 
 import numpy as np
+import pandas as pd
 import pathlib
 import logging
 from models.wideresnet import WideResNet
@@ -300,7 +301,7 @@ def plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset):
     fig, axs = plt.subplots(1, 2, constrained_layout=True)
 
     axs[0].hist(cifar_conf_vals, bins=100)
-    axs[0].set_title('CIFAR')
+    axs[0].set_title('P1')
     axs[0].set_xlabel('Confidence')
     axs[0].set_ylabel('Number of examples')
 
@@ -309,6 +310,52 @@ def plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset):
     axs[1].set_xlabel('Confidence')
     axs[1].set_ylabel('Number of examples')
 
-    fig.suptitle('Histogram for {} Dataset confidence distribution'.format(dataset), fontsize=14)
+    fig.suptitle('Histogram for {} Dataset confidence distribution for R subset'.format(dataset), fontsize=14)
     # plt.show()
     plt.savefig('{}_hist.png'.format(dataset))
+
+
+def plot_R_histogram():
+    import matplotlib.pyplot as plt
+
+    df = pd.read_csv('cifar10-vs-ti/tinyimages.csv')
+
+    print(df)
+
+    confs, is_c10 = df.iloc[:, 2:13], df.iloc[:, -2]
+    print(confs.shape)
+    print(confs)
+
+    last_less_2 = confs.iloc[:, -1] < .2
+    conf_less_2 = confs[last_less_2]
+
+    class_confs_less_2 = conf_less_2.iloc[:, :-1]
+
+    p1_confs = class_confs_less_2.max(axis=1)
+    last_confs = conf_less_2.iloc[:, -1]
+
+
+    plot_histogram(p1_confs, last_confs, 'tinyimages')
+
+def plot_W_histogram():
+    import matplotlib.pyplot as plt
+
+    df = pd.read_csv('cifar10-vs-ti/tinyimages.csv')
+
+    print(df)
+
+    confs, is_c10 = df.iloc[:, 2:13], df.iloc[:, -2]
+    print(confs.shape)
+    print(confs)
+
+    any_more_8 = confs.iloc[:, :-1].max(axis=1) > .8
+    conf_more_8 = confs[any_more_8]
+
+    p1_confs = conf_more_8.iloc[:, :-1].max(axis=1)
+    last_confs = conf_more_8.iloc[:, -1]
+
+    plot_histogram(p1_confs, last_confs, 'tinyimages')
+
+
+if __name__ == "__main__":
+    plot_W_histogram()
