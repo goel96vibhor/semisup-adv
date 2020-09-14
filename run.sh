@@ -4,11 +4,11 @@
 #SBATCH --mail-user=rohit.sharma@euler.wacc.wisc.edu
 #SBATCH --time=0-12:30:00
 #SBATCH --gres=gpu:1
+#SBATCH -p ppc
 #SBATCH -p lianglab
 #SBATCH --qos=lianglab_owner
-nvidia-smi
 module load python/3.7
-module load anaconda/3/2019.07
+#module load anaconda/3/2019.07
 module load cuda/9.0 groupmods/cudnn/9.2
 module load groupmods/lianglab/cuda/9.2-dnn
 STARTTIME=$(date +%s)
