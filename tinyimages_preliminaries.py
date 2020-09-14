@@ -61,6 +61,11 @@ parser.add_argument('--print_freq', '-s', default=5, type=int, metavar='N',
 parser.add_argument('--num_workers', type=int, default=80,
                     help='Number of workers for data loading')
 
+parser.add_argument('--num_images', type=int, default=500000,
+                    help='Number of images in dataset')
+parser.add_argument('--start_index', type=int, default=0,
+                    help='Starting index of image')
+
 
 # parse args, etc.
 args = parser.parse_args()
@@ -138,7 +143,8 @@ def main():
     logging.info('Distance to CIFAR-10 test set')
     logging.info('Args: %s', args)
 
-    num_images = 79302017
+#     num_images = 79302017
+    num_images = args.num_images
     if args.features == 'raw':
         data_path = os.path.join(args.data_dir, 'tiny_images.bin')
         data_dtype = 'uint8'
@@ -187,6 +193,7 @@ def main():
                               increment / elapsed))
                 start_time = time.time()
                 prev_count = count
+                print(i)
             
         # save the results
         out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test.pickle')

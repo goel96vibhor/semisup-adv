@@ -351,6 +351,10 @@ def test(dataset, epoch, model, criterion, test_loader, run_config, mean, std, b
                 base_outputs = softmax(base_outputs)
                 _, base_preds = torch.max(base_outputs, dim=1)
 
+
+            if step%10==0:
+                print(step)
+                print(data.shape)
             if step == 0:
                 print(data[1,:])
                 print(outputs[1,:])
@@ -487,7 +491,7 @@ def main():
             logging.StreamHandler()
     ])
     logger = logging.getLogger()
-    dataframe_file = output_dir + '/' + args.dataset + '.csv'
+    dataframe_file = output_dir + '/' + args.dataset + '_new.csv'
 
     logger.info(json.dumps(config, indent=2))
 

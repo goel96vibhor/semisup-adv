@@ -6,7 +6,7 @@ class TinyImages(torch.utils.data.Dataset):
 
     def __init__(self, train = False, transform=None, target_transform = None, exclude_cifar=False):
 
-        data_file = open('data/unlabeled_datasets/80M_Tiny_Images/tiny_50k.bin', "rb")
+        data_file = open('data/unlabeled_datasets/80M_Tiny_Images/tiny_500k.bin', "rb")
 
         def load_image(idx):
             data_file.seek(idx * 3072)
@@ -46,7 +46,7 @@ class TinyImages(torch.utils.data.Dataset):
 
             # from PIL import Image
 
-            for idx in range(50000):
+            for idx in range(500000):
                 dt, tgt = self.load_image(idx)
 
                 # if idx < 5:
@@ -66,12 +66,12 @@ class TinyImages(torch.utils.data.Dataset):
         print('Shape of data in loader:', np.shape(self.data))
 
     def __getitem__(self, index):
-        index = (index + self.offset) % 49999
+        index = (index + self.offset) % 499999
 
         if self.exclude_cifar:
             print("Excluding cifar")
             while self.in_cifar(index):
-                index = np.random.randint(50000)
+                index = np.random.randint(500000)
 
       #   img = self.load_image(index)
         
@@ -86,7 +86,7 @@ class TinyImages(torch.utils.data.Dataset):
         return img, target  # 0 is the class
 
     def __len__(self):
-        return 50000
+        return 500000
 
 
     
