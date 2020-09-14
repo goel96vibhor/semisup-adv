@@ -27,7 +27,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 def load_detector_model(args):
     
     detector_model = get_model(args.detector_model,
-                      num_classes=11,
+                      num_classes=args.n_classes,
                       normalize_input=False)
 #     detector_model = torch.nn.DataParallel(detector_model).cuda()
     checkpoint = torch.load(args.detector_model_path)

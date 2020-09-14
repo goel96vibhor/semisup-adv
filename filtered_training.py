@@ -55,7 +55,7 @@ parser.add_argument('--normalize_input', action='store_true', default=False, hel
 parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
 parser.add_argument('--use-detector-training', default=0, type=int, help='Use detector model for natural shift generation')
 # Logging and checkpointing
-parser.add_argument('--log_interval', type=int, default=5, help='Number of batches between logging of training status')
+parser.add_argument('--log_interval', type=int, default=25, help='Number of batches between logging of training status')
 parser.add_argument('--save_freq', default=25, type=int, help='Checkpoint save frequency (in epochs)')
 
 # Generic training configs
@@ -82,7 +82,7 @@ parser.add_argument('--pretrained_epochs', default=14,type=int, help='number of 
 #Filtering configs
 parser.add_argument('--unsup_std_deviations', type=float, default=1.0, help='Number of std to consider')
 parser.add_argument('--filter_unsup_data', default=1, type=int, help='Whether to filter unsupervised data')
-
+parser.add_argument('--use_two_detector_filtering', default=1, type=int, help='Whether to filter unsupervised data using two detector')
 # Optimizer config
 parser.add_argument('--weight_decay', '--wd', default=5e-4, type=float)
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR', help='Learning rate')
@@ -122,16 +122,36 @@ parser.add_argument('--cutout', action='store_true', default=False, help='Use cu
 args = parser.parse_args()
 
 
-def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0):
-      soft_out = F.softmax(example_outputs)
-      soft_max = torch.max(soft_out, dim=1).values
-      mu, std = norm.fit(soft_max)
-      upper_limit = mu
-      lower_limit = mu - (unsup_std_deviations*std)
-      # upper_limit = mu + unsup_std_deviations*std
-      # lower_limit = mu - unsup_std_deviations*std
-      indices = ((soft_max < upper_limit) & (soft_max > lower_limit)).nonzero().view(-1)
-      logging.info("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
+def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False):
+      if use_two_detector_filtering:
+            logging.info('Filtering unsup indices using two detector predictions')
+            det1_unlab_file = 'selection_model/testing_head_0.1/unlabeled_percy_500k.csv'
+            det2_unlab_file = 'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv'            
+            det1_unlab_df = pd.read_csv(det1_unlab_file)
+            det2_unlab_df = pd.read_csv(det2_unlab_file)
+            det1_unlab_df = det1_unlab_df.set_index(['0']).sort_index()
+            det2_unlab_df = det2_unlab_df.set_index(['0']).sort_index()
+            det1_unlab_scores = det1_unlab_df.iloc[:,1:12]
+            det2_unlab_scores = det2_unlab_df.iloc[:,1:12]
+            det1_unlab_preds = det1_unlab_df.iloc[:,22]
+            det2_unlab_preds = det2_unlab_df.iloc[:,22]
+            det1_unlab_targets = det1_unlab_df.iloc[:,0]
+            det2_unlab_targets = det2_unlab_df.iloc[:,0]
+            d1_d2_unlab = (det1_unlab_preds == det2_unlab_preds)
+            indices = det1_unlab_preds.index[(det1_unlab_preds !=  det2_unlab_preds)]
+            indices = torch.tensor(indices, dtype = torch.int)
+            logging.info("Filtered indices from unlabeled softmax confidences with count %s" %(indices.shape))
+      else:      
+            logging.info('Filtering unsup indices using thresholding')
+            soft_out = F.softmax(example_outputs)
+            soft_max = torch.max(soft_out, dim=1).values
+            mu, std = norm.fit(soft_max)
+            upper_limit = mu
+            lower_limit = mu - (unsup_std_deviations*std)
+            # upper_limit = mu + unsup_std_deviations*std
+            # lower_limit = mu - unsup_std_deviations*std
+            indices = ((soft_max < upper_limit) & (soft_max > lower_limit)).nonzero().view(-1)
+            logging.info("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
       return indices
 
 
@@ -233,7 +253,7 @@ trainset = SemiSupervisedDataset(base_dataset=args.dataset,
 if args.filter_unsup_data:
       example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                   args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
-      filtered_unsup_indices = get_filtered_indices(example_outputs, args.unsup_std_deviations)
+      filtered_unsup_indices = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering)
       logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
@@ -400,7 +420,7 @@ def eval(args, model, device, eval_set, loader):
                     pass
                 elif args.distance == 'l_inf':
                     # run medium-strength gradient attack
-                    is_correct_clean, is_correct_rob = pgd(
+                    is_correct_clean, is_correct_rob, _ = pgd(
                         model, data, target,
                         epsilon=args.epsilon,
                         num_steps=2 * args.pgd_num_steps,

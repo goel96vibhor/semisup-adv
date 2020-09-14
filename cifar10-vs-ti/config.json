@@ -2,11 +2,11 @@
   "model_config": {
     "n_classes": 11,
     "detector_model_name": "wrn-28-10",
-    "use_old_detector": 1,
+    "use_old_detector": 0,
     "detector_model_path": "selection_model/selection_model.pth"
   },
   "optim_config": {
-    "epochs": 600,
+    "epochs": 50,
     "batch_size": 128,
     "base_lr": 0.2,
     "weight_decay": 0.0001,
@@ -17,13 +17,13 @@
   },
   "data_config": {
     "dataset": "CIFAR10VsTinyImages",
-    "dataset_dir": "data"
+    "dataset_dir": "data/"
   },
   "run_config": {
     "seed": 17,
     "outdir": "cifar10-vs-ti/",
     "num_workers": 7,
     "device": "cuda",
-    "save_freq": 20
+    "save_freq": 10
   }
 }

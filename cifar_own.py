@@ -210,6 +210,7 @@ class CIFAR10(VisionDataset):
 
     """
     base_folder = 'cifar-10-batches-py'
+    even_odd_indices_filename = ['even_cifar_list', 'odd_cifar_list']
     url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
     filename = "cifar-10-python.tar.gz"
     tgz_md5 = 'c58f30108f718f92721af3b95e74349a'
@@ -270,9 +271,18 @@ class CIFAR10(VisionDataset):
         print(self.data.shape)
         if even_odd >=0 :
               even_odd = even_odd%2
-              self.data = self.data[even_odd::2]
-              self.targets = self.targets[even_odd::2]
+              select_indices_filepath = os.path.join(self.root, self.base_folder, self.even_odd_indices_filename[even_odd])
+              with open (select_indices_filepath, 'rb') as fp:
+                  select_indices = pickle.load(fp)
+            #   self.data = self.data[even_odd::2]
+            #   self.targets = self.targets[even_odd::2]
+            #   select_indices = list(range(len(self.data)))
+            #   np.random.shuffle(select_indices)
+            #   select_indices = select_indices[0:int(len(select_indices)/2)]
+              self.data = self.data[select_indices]
+              self.targets = [self.targets[i] for i in select_indices]
               print("filtering even odd=%d for cifar dataset with remaning shape %s" %(even_odd, self.data.shape))
+              print(select_indices[0:5])
         self._load_meta()
 
     def _load_meta(self):
@@ -305,8 +315,8 @@ class CIFAR10(VisionDataset):
 
         if self.target_transform is not None:
             target = self.target_transform(target)
-
-        return img, target
+      #   print(img.shape)
+        return img, target, index
 
 
     def __len__(self):

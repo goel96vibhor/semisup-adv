@@ -138,7 +138,7 @@ def get_loader(batch_size, num_workers, use_gpu):
 """
 def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu, num_images, 
                              cifar_fraction=0.5, dataset_dir='data', 
-                             logger=None, even_odd = -1, load_ti_head_tail = -1):
+                             logger=None, even_odd = -1, load_ti_head_tail = -1, use_ti_data_for_training = 1):
 
     # Normalization values for CIFAR-10
 #     num_images = 79302017
@@ -162,71 +162,75 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu, num_images,
         dataset_dir, train=False, transform=test_transform, download=True)
 
     # Reading tinyimages and appropriate train/test indices
-    logger.info('Reading tiny images')
-    if load_ti_head_tail == 0:
-          ti_start_index = num_images
-          ti_path = os.path.join(dataset_dir, 'tiny_images_tail.bin')
-    elif load_ti_head_tail == 1:
-          ti_start_index = 0
-          ti_path = os.path.join(dataset_dir, 'tiny_images_head.bin')
-    else:
-          ti_start_index = 0
-          ti_path = os.path.join(dataset_dir, 'tiny_images.bin')
-    
-    ti_data = np.memmap(ti_path, mode='r', dtype='uint8', order='F',
-                        shape=(32, 32, 3, num_images)).transpose([3, 0, 1, 2])
-    
-    logger.info('Size of tiny images {}'.format(ti_data.shape))
-    ti_indices_path = os.path.join(dataset_dir,
-                                   'ti_vs_cifar_inds.pickle')
-    with open(ti_indices_path, 'rb') as f:
-        ti_indices = pickle.load(f)
-#     logger.info('Loaded TI indices with size %d' %(ti_indices.size))
-    print("Min of ti indixes train %d max %d" %(min(ti_indices['train']), max(ti_indices['train'])))
-    if load_ti_head_tail >= 0:
-      #     ti_data = ti_data[ti_data%2==even_odd]
-          if load_ti_head_tail == 0:
-                ti_indices['train'] = ti_indices['train'][ti_indices['train']>=num_images]
-          else:
-                ti_indices['train'] = ti_indices['train'][ti_indices['train']<num_images]
-    
-    i = 0
-    print("ti train size %d, ti test size %d" %(ti_indices['train'].size, ti_indices['test'].size))
+    if use_ti_data_for_training: 
+            logger.info('Reading tiny images')
+            if load_ti_head_tail == 0:
+                  ti_start_index = num_images
+                  ti_path = os.path.join(dataset_dir, 'tiny_images_tail.bin')
+            elif load_ti_head_tail == 1:
+                  ti_start_index = 0
+                  ti_path = os.path.join(dataset_dir, 'tiny_images_head.bin')
+            else:
+                  ti_start_index = 0
+                  ti_path = os.path.join(dataset_dir, 'tiny_images.bin')
+            
+            ti_data = np.memmap(ti_path, mode='r', dtype='uint8', order='F',
+                                    shape=(32, 32, 3, num_images)).transpose([3, 0, 1, 2])
+            
+            logger.info('Size of tiny images {}'.format(ti_data.shape))
+            ti_indices_path = os.path.join(dataset_dir,
+                                          'ti_vs_cifar_inds.pickle')
+            with open(ti_indices_path, 'rb') as f:
+                  ti_indices = pickle.load(f)
+            #     logger.info('Loaded TI indices with size %d' %(ti_indices.size))
+            print("Min of ti indixes train %d max %d" %(min(ti_indices['train']), max(ti_indices['train'])))
+            if load_ti_head_tail >= 0:
+                  #     ti_data = ti_data[ti_data%2==even_odd]
+                  if load_ti_head_tail == 0:
+                        ti_indices['train'] = ti_indices['train'][ti_indices['train']>=num_images]
+                  else:
+                        ti_indices['train'] = ti_indices['train'][ti_indices['train']<num_images]
+            
+            i = 0
+            print("ti train size %d, ti test size %d" %(ti_indices['train'].size, ti_indices['test'].size))
 
-    cifar_train_dataset.targets.extend([10] * ti_indices['train'].size)
-    cifar_test_dataset.targets.extend([10] * ti_indices['test'].size)
-    
-    train_dataset = TICifarDataset(cifar_train_dataset, ti_data, ti_indices['train'], cifar_train_dataset.targets, train = True, ti_start_index = ti_start_index,
-                                    transform = train_transform)
-    test_dataset = TICifarDataset(cifar_test_dataset, ti_data, ti_indices['test'], cifar_test_dataset.targets, train = False, ti_start_index = ti_start_index,
-                                    transform = test_transform)
-#     ti_train_data = ti_data[ti_indices['train']]
-#     ti_test_data = ti_data[ti_indices['test']]
-#     for dataset, ti_dataset in zip((train_dataset, test_dataset), (ti_train_data, ti_test_data)):
-#         print("concatenating data")
-#       #   dataset.data = np.concatenate((dataset.data, ti_dataset))
-#         print("extending labels")
-#         dataset.targets.extend([10] * len(ti_dataset))
-#         i+=1
-#         if i%100 ==0:
-#               print(i)
+            cifar_train_dataset.targets.extend([10] * ti_indices['train'].size)
+            cifar_test_dataset.targets.extend([10] * ti_indices['test'].size)
+            
+            train_dataset = TICifarDataset(cifar_train_dataset, ti_data, ti_indices['train'], cifar_train_dataset.targets, train = True, ti_start_index = ti_start_index,
+                                                transform = train_transform)
+            test_dataset = TICifarDataset(cifar_test_dataset, ti_data, ti_indices['test'], cifar_test_dataset.targets, train = False, ti_start_index = ti_start_index,
+                                                transform = test_transform)
+            logger.info('Calling train sampler')
+            train_sampler = BalancedSampler(
+                              train_dataset.targets, batch_size,
+                              balanced_fraction=cifar_fraction,
+                              num_batches=int(len(cifar_train_dataset) / (batch_size * cifar_fraction)),
+                              label_to_balance=10, 
+                              logger=logger
+                            )              
+            logger.info('Created train sampler')
+            train_loader = data.DataLoader(
+                  train_dataset,                  
+                  batch_sampler=train_sampler,
+                  num_workers=num_workers,                  
+                  pin_memory=use_gpu,
+            )                                                  
+    else:                                            
+            logger.info("not using TI data for training")
+            train_dataset = cifar_train_dataset
+            test_dataset = cifar_test_dataset
+            train_sampler = None
+            train_loader = data.DataLoader(
+                  train_dataset,
+                  batch_size = batch_size,
+                  num_workers=num_workers,
+                  shuffle = True,
+                  pin_memory=use_gpu,
+            )
 
-    logger.info('Calling train sampler')
-    # Balancing training batches with CIFAR10 and TI
-    train_sampler = BalancedSampler(
-        train_dataset.targets, batch_size,
-        balanced_fraction=cifar_fraction,
-        num_batches=int(len(cifar_train_dataset) / (batch_size * cifar_fraction)),
-        label_to_balance=10, 
-        logger=logger)
+
     
-    logger.info('Created train sampler')
-    train_loader = data.DataLoader(
-        train_dataset,
-        batch_sampler=train_sampler,
-        num_workers=num_workers,
-        pin_memory=use_gpu,
-    )
 
     logger.info('Created train loader')
     test_loader = data.DataLoader(

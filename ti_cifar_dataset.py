@@ -102,7 +102,7 @@ class TICifarDataset(Dataset):
       #       print('returning base item')
       #   print(self.base_dataset[item][0].shape)
       #   print(self.base_dataset[item][0].dtype)
-        return self.base_dataset[item] + (item,)
+        return self.base_dataset[item] 
 
 #     def __repr__(self):
 #         fmt_str = 'Semisupervised Dataset ' + self.__class__.__name__ + '\n'

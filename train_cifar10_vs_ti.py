@@ -110,6 +110,7 @@ def parse_args():
     parser.add_argument('--detector-model', default='wrn-28-10', type=str, help='Name of the detector model (see utils.get_model)')
     parser.add_argument('--use-old-detector', default=0, type=int, help='Use detector model for evaluation')
     parser.add_argument('--detector_model_path', default = 'selection_model/selection_model.pth', type = str, help='Model for attack evaluation')
+    parser.add_argument('--n_classes', type=int, default=11, help='Number of classes for detector model')
     # base model configs
     parser.add_argument('--also-use-base-model', default=0, type=int, help='Use base model for confusion matrix evaluation')
     parser.add_argument('--base_model_path', help='Base Model path')
@@ -148,12 +149,13 @@ def parse_args():
     parser.add_argument('--start_index', type=int, default=0, help='Starting index of image')
     parser.add_argument('--load_ti_head_tail', type=int, default = 0, help='Load ti head tail indices')
     parser.add_argument('--class11_weight', type=float, default=0.01)
+    parser.add_argument('--use_ti_data_for_training', default=1, type=int, help='Whether to use ti data for training')   
     args = parser.parse_args()
 
     # 10 CIFAR10 classes and one non-CIFAR10 class
     model_config = OrderedDict([
         # ('name', args.model),
-        ('n_classes', 11),
+        ('n_classes', args.n_classes),
         ('detector_model_name', args.detector_model), 
         ('use_old_detector', args.use_old_detector), 
         ('detector_model_path', args.detector_model_path)
@@ -590,10 +592,12 @@ def main():
     model = torch.nn.DataParallel(model.cuda())
     n_params = sum([param.view(-1).size()[0] for param in model.parameters()])
     logger.info('n_params: {}'.format(n_params))
-
+    if args.n_classes == 11:
+          weight = torch.Tensor([1] * 10 + [args.class11_weight])
+    else:
+          weight = torch.Tensor([1]* args.n_classes)
     criterion = nn.CrossEntropyLoss(reduction='mean',
-                                    weight=torch.Tensor(
-                                        [1] * 10 + [args.class11_weight])).cuda()
+                                    weight=weight).cuda()
     
     mean = torch.tensor([0.4914, 0.4822, 0.4465])
     std = torch.tensor([0.2470, 0.2435, 0.2616])
@@ -625,15 +629,6 @@ def main():
                   train_loader = torch.utils.data.DataLoader(trainset,
                                                       batch_size=args.batch_size,
                                                       shuffle=True, **dl_kwargs)                                                                          
-            # elif args.dataset == 'tinyimages':
-            #       print('Loading unlabeled dataset:', args.dataset, '...')
-            #       transform_test = transforms.Compose([transforms.ToTensor(), ])
-            #       mean = torch.tensor([0.4914, 0.4822, 0.4465])
-            #       std = torch.tensor([0.2470, 0.2435, 0.2616])
-
-            #       testset = SemiSupervisedDataset(base_dataset=args.dataset, train=False, transform = transform_test)
-            #       train_loader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, **dl_kwargs)
-            #       test_loader = train_loader
             elif args.dataset == 'unlabeled_percy_500k':
                   print('Loading unlabeled dataset:', args.dataset, '...')
                   transform_train = transforms.Compose([transforms.ToTensor(), ])
@@ -675,6 +670,7 @@ def main():
                                                 dataset_dir=data_config['dataset_dir'], 
                                                 even_odd = args.even_odd,
                                                 load_ti_head_tail = args.load_ti_head_tail,
+                                                use_ti_data_for_training = args.use_ti_data_for_training,
                                                 logger=logger)
             # optimizer
             optim_config['steps_per_epoch'] = len(train_loader)
