@@ -49,7 +49,7 @@ def load_detector_model(args):
 #     state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
     detector_model.load_state_dict(new_state_dict)
     detector_model = torch.nn.DataParallel(detector_model).cuda()
-    logging.info("Loaded detector model with epoch %d, accuracy %0.4f" %(checkpoint['epoch'], checkpoint['accuracy_vs']))
+    #logging.info("Loaded detector model with epoch %d, accuracy %0.4f" %(checkpoint['epoch'], checkpoint['accuracy_vs']))
     return detector_model
 
 def get_model(name, num_classes=10, normalize_input=False):

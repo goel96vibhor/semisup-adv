@@ -106,7 +106,9 @@ def trades_non_adv_loss(model,
                 epsilon=0.031,
                 beta=1.0,
                 distance='inf', 
-                entropy_weight=0):
+                entropy_weight=0, 
+                example_weights = None, 
+                indexes = None):
     """The TRADES KL-robustness regularization term proposed by
        Zhang et al., with added support for stability training and entropy
        regularization"""
@@ -155,8 +157,16 @@ def trades_non_adv_loss(model,
 #     x_adv = Variable(torch.clamp(x_adv, 0.0, 1.0), requires_grad=False)
 #     logits_adv = F.log_softmax(model(x_adv), dim=1)
     logits = model(x_natural)
-
-    loss_natural = F.cross_entropy(logits, y, ignore_index=-1)
+    if example_weights is None:
+      loss_natural = F.cross_entropy(logits, y, ignore_index=-1)
+    else:
+      assert indexes is not None, "indexes can not be None"
+      loss_natural = F.cross_entropy(logits, y, ignore_index=-1, reduction = 'none')
+      loss_natural = torch.mean(torch.mul(loss_natural, example_weights[indexes]))
+      # if 1 in indexes:
+      #       print("printing example weights for batch")
+      #       print(example_weights[indexes])
+      #       print(indexes)
 #     p_natural = F.softmax(logits, dim=1)
 #     loss_robust = criterion_kl(
 #         logits_adv, p_natural) / batch_size

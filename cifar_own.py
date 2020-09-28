@@ -187,7 +187,7 @@ import os
 import os.path
 import numpy as np
 import pickle
-
+import logging
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.utils import check_integrity, download_and_extract_archive
 
@@ -230,9 +230,9 @@ class CIFAR10(VisionDataset):
         'key': 'label_names',
         'md5': '5ff9c542aee3614f3951f8cda6e48888',
     }
-
+    
     def __init__(self, root, train=True, transform=None, target_transform=None,
-                 download=False, even_odd = -1):
+                 download=False, even_odd = -1, random_split_version = 2):
 
         super(CIFAR10, self).__init__(root, transform=transform,
                                       target_transform=target_transform)
@@ -253,7 +253,7 @@ class CIFAR10(VisionDataset):
 
         self.data = []
         self.targets = []
-
+        logger = logging.getLogger()
         # now load the picked numpy arrays
         for file_name, checksum in downloaded_list:
             file_path = os.path.join(self.root, self.base_folder, file_name)
@@ -271,7 +271,7 @@ class CIFAR10(VisionDataset):
         print(self.data.shape)
         if even_odd >=0 :
               even_odd = even_odd%2
-              select_indices_filepath = os.path.join(self.root, self.base_folder, self.even_odd_indices_filename[even_odd])
+              select_indices_filepath = os.path.join(self.root, self.base_folder, self.even_odd_indices_filename[even_odd] + '_v'+ str(random_split_version))
               with open (select_indices_filepath, 'rb') as fp:
                   select_indices = pickle.load(fp)
             #   self.data = self.data[even_odd::2]
@@ -281,8 +281,8 @@ class CIFAR10(VisionDataset):
             #   select_indices = select_indices[0:int(len(select_indices)/2)]
               self.data = self.data[select_indices]
               self.targets = [self.targets[i] for i in select_indices]
-              print("filtering even odd=%d for cifar dataset with remaning shape %s" %(even_odd, self.data.shape))
-              print(select_indices[0:5])
+              logger.info("filtering even odd=%d for cifar dataset with remaning shape %s from filepath %s" %(even_odd, self.data.shape, select_indices_filepath))
+              logger.info(select_indices[0:5])
         self._load_meta()
 
     def _load_meta(self):
@@ -308,8 +308,8 @@ class CIFAR10(VisionDataset):
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
         img = Image.fromarray(img)
-        if index < 10:
-              img.save('selection_model/for_view/cifar10/'+str(index)+'.png')
+      #   if index < 10:
+      #         img.save('selection_model/for_view/cifar10/'+str(index)+'.png')
         if self.transform is not None:
             img = self.transform(img)
 

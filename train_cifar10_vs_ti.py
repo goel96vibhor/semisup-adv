@@ -111,6 +111,8 @@ def parse_args():
     parser.add_argument('--use-old-detector', default=0, type=int, help='Use detector model for evaluation')
     parser.add_argument('--detector_model_path', default = 'selection_model/selection_model.pth', type = str, help='Model for attack evaluation')
     parser.add_argument('--n_classes', type=int, default=11, help='Number of classes for detector model')
+    parser.add_argument('--random_split_version', type=int, default=2, help='Version of random split')
+
     # base model configs
     parser.add_argument('--also-use-base-model', default=0, type=int, help='Use base model for confusion matrix evaluation')
     parser.add_argument('--base_model_path', help='Base Model path')
@@ -146,9 +148,9 @@ def parse_args():
     #train configs
     parser.add_argument('--num_images', type=int, help='Number of images in dataset')
     parser.add_argument('--even_odd', type=int, default = 0, help='Filter train, test data for even odd indices')
-    parser.add_argument('--start_index', type=int, default=0, help='Starting index of image')
+    parser.add_argument('--ti_start_index', type=int, default=0, help='Starting index of image')
     parser.add_argument('--load_ti_head_tail', type=int, default = 0, help='Load ti head tail indices')
-    parser.add_argument('--class11_weight', type=float, default=0.01)
+    parser.add_argument('--class11_weight', type=float, default=0.1)
     parser.add_argument('--use_ti_data_for_training', default=1, type=int, help='Whether to use ti data for training')   
     args = parser.parse_args()
 
@@ -534,12 +536,15 @@ def main():
 
     if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-    
+    if config['model_config']['use_old_detector']:
+          output_file = args.dataset + '.log'
+    else:
+          output_file = 'training.log'
     logging.basicConfig(
       level=logging.INFO,
       format="%(asctime)s | %(message)s",
       handlers=[
-            logging.FileHandler(os.path.join(output_dir, args.dataset + '.log')),
+            logging.FileHandler(os.path.join(output_dir, output_file)),
             logging.StreamHandler()
     ])
     logger = logging.getLogger()
@@ -653,6 +658,8 @@ def main():
                                                 dataset_dir=data_config['dataset_dir'], 
                                                 even_odd = args.even_odd,
                                                 load_ti_head_tail = args.load_ti_head_tail,
+                                                random_split_version = args.random_split_version, 
+                                                ti_start_index = args.ti_start_index,
                                                 logger=logger)
 
             # normalize_func  = transforms.Normalize(mean.unsqueeze(0),std.unsqueeze(0))
@@ -671,6 +678,8 @@ def main():
                                                 even_odd = args.even_odd,
                                                 load_ti_head_tail = args.load_ti_head_tail,
                                                 use_ti_data_for_training = args.use_ti_data_for_training,
+                                                random_split_version = args.random_split_version, 
+                                                ti_start_index = args.ti_start_index,
                                                 logger=logger)
             # optimizer
             optim_config['steps_per_epoch'] = len(train_loader)

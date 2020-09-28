@@ -57,7 +57,7 @@ def eval_adv_test(model, device, test_loader, attack, attack_params,
                 count += len(target)
                 X, y = Variable(data, requires_grad=True), Variable(target)
                 # is_correct_adv has batch_size*num_iterations dimensions
-                is_correct_natural, is_correct_adv = pgd(
+                is_correct_natural, is_correct_adv, _ = pgd(
                     model, X, y,
                     epsilon=attack_params['epsilon'],
                     num_steps=attack_params['num_steps'],
@@ -156,8 +156,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     torch.manual_seed(args.random_seed)
-    
-    output_suffix = args.output_suffix
+    if args.output_suffix:
+          output_suffix = args.output_suffix
+    else:
+          output_suffix = '_' + args.dataset
     if args.use_detector_evaluation:
           output_dir, checkpoint_name = os.path.split(args.detector_model_path)
           output_suffix = output_suffix+'_detector'

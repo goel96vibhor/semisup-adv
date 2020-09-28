@@ -53,7 +53,7 @@ class TICifarDataset(Dataset):
         self.used_targets = used_targets
         self.base_dataset_size = len(base_dataset)
         self.ti_start_index = ti_start_index
-        print("Base dataset size for TI CIFAR dataset %d, extend dataset size %d, ti indices map size %d, targets size %d, ti start index %d" 
+        logger.info("Base dataset size for TI CIFAR dataset %d, extend dataset size %d, ti indices map size %d, targets size %d, ti start index %d" 
                               %(self.base_dataset_size, len(self.extend_dataset), len(self.ti_indices_map), len(self.targets), self.ti_start_index))
         self.train = train
         
@@ -87,8 +87,8 @@ class TICifarDataset(Dataset):
                   torchvision.transforms.ToTensor(),
                   # torchvision.transforms.Normalize(mean, std),
             ])
-            if item < self.base_dataset_size+80:
-              extend_tuple.save('selection_model/for_view/ti/'+str(item)+'.png')
+            # if item < self.base_dataset_size+80:
+            #   extend_tuple.save('selection_model/for_view/ti/'+str(item)+'.png')
             # # print(extend_tuple.dtype)
             if self.transform is not None:
                   extend_tuple = train_transform(extend_tuple)

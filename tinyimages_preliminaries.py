@@ -45,6 +45,9 @@ parser.add_argument('--output_dir', type=str,
 parser.add_argument('--features', type=str, default='raw',
                     help='can be "raw" for raw image data, or path'
                          ' (inside data_dir) of numpy file with features')
+parser.add_argument('--ti_bin_file', type=str,
+                    help='name of ti bin file')
+
 
 # Distance config
 parser.add_argument('--metric', type=str, choices=['l2', 'cosine'],
@@ -56,7 +59,7 @@ parser.add_argument('--subtract_mean', action='store_true', default=False,
 # General 
 parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
                     help='input batch size for training')
-parser.add_argument('--print_freq', '-s', default=5, type=int, metavar='N',
+parser.add_argument('--print_freq', '-s', default=50, type=int, metavar='N',
                     help='how many batches between log writes')
 parser.add_argument('--num_workers', type=int, default=80,
                     help='Number of workers for data loading')
@@ -65,7 +68,7 @@ parser.add_argument('--num_images', type=int, default=500000,
                     help='Number of images in dataset')
 parser.add_argument('--start_index', type=int, default=0,
                     help='Starting index of image')
-
+parser.add_argument('--random_split_version', type=int, default=3, help='Version of random split')
 
 # parse args, etc.
 args = parser.parse_args()
@@ -146,13 +149,14 @@ def main():
 #     num_images = 79302017
     num_images = args.num_images
     if args.features == 'raw':
-        data_path = os.path.join(args.data_dir, 'tiny_images.bin')
+      #   data_path = os.path.join(args.data_dir, 'tiny_images.bin')
+        data_path = os.path.join(args.data_dir, args.ti_bin_file)
         data_dtype = 'uint8'
     else:
         data_path = os.path.join(args.data_dir, args.features)
         data_dtype = 'float32'
 
-    out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test.pickle')
+    out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test_v' + str(args.random_split_version)+ '.pickle')
     if os.path.exists(out_path):
         logging.info('Distance file exists, skipping computation')
     else: 
@@ -167,6 +171,7 @@ def main():
         logging.info('Getting CIFAR10 test set images')
         keyword_data = load_cifar10_keywords(args.data_dir)
         cifar10_test_indices = np.array([x['nn_index'] for x in keyword_data[-10000:]])
+        print("Cifar 10 test size %d" %(cifar10_test_indices.size))
         cifar10_test_indices = cifar10_test_indices[cifar10_test_indices < num_images]
         print("Cifar 10 test size %d" %(cifar10_test_indices.size))
         cifar10_test_data = to_tensor(data[cifar10_test_indices], data.dtype)
@@ -198,8 +203,8 @@ def main():
                 print(i)
             
         # save the results
-        out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test.pickle')
-        logging.info('Saving results to %s' % out_path)
+        out_path = os.path.join(args.output_dir, 'distance_to_cifar10_test_v' + str(args.random_split_version)+ '.pickle')
+        logging.info('Saving results for count %d to %s' % (count, out_path))
         nn_distances, nn_indices = [np.concatenate(x) for x in zip(*output_batches)]
         nn_indices = nn_indices.astype('uint16')
         with open(out_path, 'wb') as f:
@@ -208,7 +213,7 @@ def main():
 
     
     #------------ Choosing indices for TI vs. Cifar10 task -------------#
-    indices_path = os.path.join(args.output_dir, 'ti_vs_cifar_inds.pickle')
+    indices_path = os.path.join(args.output_dir, 'ti_vs_cifar_inds_v' + str(args.random_split_version)+ '.pickle')
     if os.path.exists(indices_path):
         logging.info('TI indices for selection model file exists')
     else:
@@ -238,7 +243,7 @@ def main():
         num_ti_test = int(1e4)
         ti_indices = valid_indices[np.random.permutation(num_valid)[:(num_ti_train+num_ti_test)]]
         # save indices
-        indices_path = os.path.join(args.output_dir, 'ti_vs_cifar_inds.pickle')
+      #   indices_path = os.path.join(args.output_dir, 'ti_vs_cifar_inds.pickle')
         with open(indices_path, 'wb') as f:
             pickle.dump(dict(train=ti_indices[:num_ti_train],
                              test=ti_indices[num_ti_train:]), f)

@@ -138,7 +138,7 @@ def get_loader(batch_size, num_workers, use_gpu):
 """
 def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu, num_images, 
                              cifar_fraction=0.5, dataset_dir='data', 
-                             logger=None, even_odd = -1, load_ti_head_tail = -1, use_ti_data_for_training = 1):
+                             logger=None, even_odd = -1, load_ti_head_tail = -1, use_ti_data_for_training = 1, random_split_version = 2, ti_start_index = 0):
 
     # Normalization values for CIFAR-10
 #     num_images = 79302017
@@ -157,7 +157,7 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu, num_images,
     ])
 
     cifar_train_dataset = cifar_own.CIFAR10(
-        dataset_dir, train=True, transform=train_transform, download=True, even_odd = even_odd)
+        dataset_dir, train=True, transform=train_transform, download=True, even_odd = even_odd, random_split_version = random_split_version)
     cifar_test_dataset = cifar_own.CIFAR10(
         dataset_dir, train=False, transform=test_transform, download=True)
 
@@ -165,34 +165,35 @@ def get_cifar10_vs_ti_loader(batch_size, num_workers, use_gpu, num_images,
     if use_ti_data_for_training: 
             logger.info('Reading tiny images')
             if load_ti_head_tail == 0:
-                  ti_start_index = num_images
-                  ti_path = os.path.join(dataset_dir, 'tiny_images_tail.bin')
+                  ti_start_index += num_images
+                  ti_path = os.path.join(dataset_dir, 'tiny_250k_tail_v' + str(random_split_version) + '.bin')
             elif load_ti_head_tail == 1:
-                  ti_start_index = 0
-                  ti_path = os.path.join(dataset_dir, 'tiny_images_head.bin')
+                  # ti_start_index = 0
+                  ti_path = os.path.join(dataset_dir, 'tiny_250k_head_v'+ str(random_split_version) +'.bin')
             else:
-                  ti_start_index = 0
+                  # ti_start_index = 0
                   ti_path = os.path.join(dataset_dir, 'tiny_images.bin')
             
             ti_data = np.memmap(ti_path, mode='r', dtype='uint8', order='F',
                                     shape=(32, 32, 3, num_images)).transpose([3, 0, 1, 2])
             
-            logger.info('Size of tiny images {}'.format(ti_data.shape))
+            logger.info('Size of tiny images {} loaded fom file {}'.format(ti_data.shape, ti_path))
             ti_indices_path = os.path.join(dataset_dir,
-                                          'ti_vs_cifar_inds.pickle')
+                                          'ti_vs_cifar_inds_v'+ str(random_split_version) +'.pickle')
+            logger.info('Loaded TI indices from file %s' %(ti_indices_path))                                          
             with open(ti_indices_path, 'rb') as f:
                   ti_indices = pickle.load(f)
-            #     logger.info('Loaded TI indices with size %d' %(ti_indices.size))
-            print("Min of ti indixes train %d max %d" %(min(ti_indices['train']), max(ti_indices['train'])))
+            # logger.info('Loaded TI indices with size %d' %(ti_indices.size))
+            logger.info("Min of ti indixes train %d max %d" %(min(ti_indices['train']), max(ti_indices['train'])))
             if load_ti_head_tail >= 0:
                   #     ti_data = ti_data[ti_data%2==even_odd]
                   if load_ti_head_tail == 0:
-                        ti_indices['train'] = ti_indices['train'][ti_indices['train']>=num_images]
+                        ti_indices['train'] = ti_indices['train'][ti_indices['train']>= ti_start_index]
                   else:
-                        ti_indices['train'] = ti_indices['train'][ti_indices['train']<num_images]
+                        ti_indices['train'] = ti_indices['train'][ti_indices['train']< ti_start_index + num_images]
             
             i = 0
-            print("ti train size %d, ti test size %d" %(ti_indices['train'].size, ti_indices['test'].size))
+            logger.info("ti train size %d, ti test size %d" %(ti_indices['train'].size, ti_indices['test'].size))
 
             cifar_train_dataset.targets.extend([10] * ti_indices['train'].size)
             cifar_test_dataset.targets.extend([10] * ti_indices['test'].size)

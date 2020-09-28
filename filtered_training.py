@@ -83,6 +83,7 @@ parser.add_argument('--pretrained_epochs', default=14,type=int, help='number of 
 parser.add_argument('--unsup_std_deviations', type=float, default=1.0, help='Number of std to consider')
 parser.add_argument('--filter_unsup_data', default=1, type=int, help='Whether to filter unsupervised data')
 parser.add_argument('--use_two_detector_filtering', default=1, type=int, help='Whether to filter unsupervised data using two detector')
+parser.add_argument('--use_example_weighing', default=1, type=int, help='Whether to use example weighing for detectors using two detector')
 # Optimizer config
 parser.add_argument('--weight_decay', '--wd', default=5e-4, type=float)
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR', help='Learning rate')
@@ -122,7 +123,8 @@ parser.add_argument('--cutout', action='store_true', default=False, help='Use cu
 args = parser.parse_args()
 
 
-def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False):
+def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False, use_example_weighing = False):
+      weights = None
       if use_two_detector_filtering:
             logging.info('Filtering unsup indices using two detector predictions')
             det1_unlab_file = 'selection_model/testing_head_0.1/unlabeled_percy_500k.csv'
@@ -138,9 +140,26 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_de
             det1_unlab_targets = det1_unlab_df.iloc[:,0]
             det2_unlab_targets = det2_unlab_df.iloc[:,0]
             d1_d2_unlab = (det1_unlab_preds == det2_unlab_preds)
-            indices = det1_unlab_preds.index[(det1_unlab_preds !=  det2_unlab_preds)]
+            x1 = (det1_unlab_preds != 10)
+            y1 = (det2_unlab_preds != 10)
+            x2 = (det1_unlab_preds == 10)
+            y2 = (det2_unlab_preds == 10)
+
+            # mask = (x1&y2) | (x2&y1)
+            # mask = x1|y1
+            mask = (det1_unlab_preds !=  det2_unlab_preds)
+            indices = det1_unlab_preds.index[mask]
             indices = torch.tensor(indices, dtype = torch.int)
             logging.info("Filtered indices from unlabeled softmax confidences with count %s" %(indices.shape))
+            if use_example_weighing:
+                  # weights = torch.ones(indices.shape)
+                  # weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].iloc[:,10].values)
+                  weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].sum(axis=1).values)                  
+                  weights = torch.exp(weights)
+                  # print(weights.shape)
+                  # print(indices.shape)
+                  assert weights.shape == indices.shape , "shapes of indices and weights are not equal"
+                  logging.info("Using example weighing for training with total sum %0.4f" %(float(torch.sum(weights))))
       else:      
             logging.info('Filtering unsup indices using thresholding')
             soft_out = F.softmax(example_outputs)
@@ -152,7 +171,9 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_de
             # lower_limit = mu - unsup_std_deviations*std
             indices = ((soft_max < upper_limit) & (soft_max > lower_limit)).nonzero().view(-1)
             logging.info("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
-      return indices
+      if weights is None:
+            weights = torch.ones(indices.shape)
+      return indices, weights
 
 
 
@@ -249,15 +270,17 @@ trainset = SemiSupervisedDataset(base_dataset=args.dataset,
 # num_batches=50000 enforces the definition of an "epoch" as passing through 50K
 # datapoints
 # TODO: make sure that this code works also when trainset.unsup_indices=[]
-
+example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
 if args.filter_unsup_data:
       example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                   args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
-      filtered_unsup_indices = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering)
+      filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering, args.use_example_weighing)
       logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
+      example_weights[trainset.unsup_indices] = filtered_unsup_weights
       print(trainset.unsup_indices[0:10])
+example_weights = example_weights.cuda()
 epoch_datapoint_count = trainset.__len__()
 if args.train_take_amount is not None:
       epoch_datapoint_count = args.train_take_amount
@@ -298,7 +321,7 @@ eval_test_loader = DataLoader(testset, batch_size=args.test_batch_size,
 # ------------------------------------------------------------------------------
 
 # ----------------------- TRAIN AND EVAL FUNCTIONS -----------------------------
-def train(args, model, device, train_loader, optimizer, epoch, detector_model = None):
+def train(args, model, device, train_loader, optimizer, epoch, detector_model = None, example_weights = None):
     model.train()
     train_metrics = []
     epsilon = args.epsilon
@@ -346,7 +369,9 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model = 
                 epsilon=epsilon,
                 beta=args.beta,
                 distance=args.distance,
-                entropy_weight=args.entropy_weight)
+                entropy_weight=args.entropy_weight,
+                example_weights = example_weights, 
+                indexes = indexes)
         elif args.loss == 'trades':
             # The TRADES KL-robustness regularization term proposed by
             # Zhang et al., with some additional features
@@ -523,7 +548,7 @@ def main():
         lr = adjust_learning_rate(optimizer, epoch)
         logger.info('Setting learning rate to %g' % lr)
         # adversarial training
-        train_data = train(args, model, device, train_loader, optimizer, epoch, detector_model = detector_model)
+        train_data = train(args, model, device, train_loader, optimizer, epoch, detector_model = detector_model, example_weights = example_weights)
         train_df = train_df.append(pd.DataFrame(train_data), ignore_index=True)
 
         # evaluation on natural examples

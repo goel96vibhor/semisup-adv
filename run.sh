@@ -21,6 +21,7 @@ python train_cifar10_vs_ti.py --detector_model_path rst_augmented/unsup_filterin
 
 #python train_cifar10_vs_ti.py --detector_model_path rst_augmented/unsup_filtering_test/two_detector_filtering_2/resnet-20/checkpoint-epoch50.pt --detector-model resnet-20 --base_model_path=rst_augmented/unsup_fraction_test/fraction_0.5/resnet-20/checkpoint-epoch50.pt --also-use-base-model=1 --use-old-detector=1 --dataset='cifar10' --num_images=250000 --even_odd=1 --load_ti_head_tail=1 --store_to_dataframe=1 --output_dir=rst_augmented/unsup_filtering_test/two_detector_filtering_2/resnet-20/ --n_classes=10
 
+#python filtered_training.py --model='resnet-20' --test_name='unsup_filtering_test/two_detector_filtering_2' --filter_unsup_data=1 --unsup_std_deviations=1 --unsup_fraction=0.5 --use_two_detector_filtering=1
 
 ENDTIME=$(date +%s)
 date
