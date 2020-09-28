@@ -84,6 +84,7 @@ parser.add_argument('--unsup_std_deviations', type=float, default=1.0, help='Num
 parser.add_argument('--filter_unsup_data', default=1, type=int, help='Whether to filter unsupervised data')
 parser.add_argument('--use_two_detector_filtering', default=1, type=int, help='Whether to filter unsupervised data using two detector')
 parser.add_argument('--use_example_weighing', default=1, type=int, help='Whether to use example weighing for detectors using two detector')
+parser.add_argument('--example_weight_alpha', type=float, default=1.0, help='hyperparamter for example weights')
 # Optimizer config
 parser.add_argument('--weight_decay', '--wd', default=5e-4, type=float)
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR', help='Learning rate')
@@ -123,7 +124,7 @@ parser.add_argument('--cutout', action='store_true', default=False, help='Use cu
 args = parser.parse_args()
 
 
-def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False, use_example_weighing = False):
+def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False, use_example_weighing = False, alpha = 1):
       weights = None
       if use_two_detector_filtering:
             logging.info('Filtering unsup indices using two detector predictions')
@@ -155,7 +156,7 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_de
                   # weights = torch.ones(indices.shape)
                   # weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].iloc[:,10].values)
                   weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].sum(axis=1).values)                  
-                  weights = torch.exp(weights)
+                  weights = torch.exp(alpha*weights)
                   # print(weights.shape)
                   # print(indices.shape)
                   assert weights.shape == indices.shape , "shapes of indices and weights are not equal"
@@ -274,7 +275,9 @@ example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indi
 if args.filter_unsup_data:
       example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                   args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
-      filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering, args.use_example_weighing)
+      filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering, 
+                                                                  args.use_example_weighing, 
+                                                                  alpha = args.example_weight_alpha)
       logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
