@@ -246,7 +246,7 @@ class SemiSupervisedDataset(Dataset):
 class SemiSupervisedSampler(Sampler):
     """Balanced sampling from the labeled and unlabeled data"""
     def __init__(self, sup_inds, unsup_inds, batch_size, unsup_fraction=0.5,
-                 num_batches=None, unsup_probablities = None):
+                 num_batches=None, unsup_probabilities = None):
         if unsup_fraction is None or unsup_fraction < 0:
             self.sup_inds = sup_inds + unsup_inds
             unsup_fraction = 0.0
