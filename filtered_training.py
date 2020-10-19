@@ -337,6 +337,7 @@ if args.use_example_sampling:
       logger.info("Using example sampling instead of weighing")
       example_probabilties = example_weights[trainset.unsup_indices]
       example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)     
+      logger.info("Example weights shape %s" %(str(example_weights.shape)))
 
       # print(trainset.unsup_indices[0:10])
 example_weights = example_weights.cuda()
@@ -382,6 +383,7 @@ if args.use_distrib_selection:
       if args.use_example_sampling:
             example_probabilties_2 = example_weights_2[trainset.unsup_indices_2]
             example_weights_2 = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+            example_weights_2 = example_weights_2.cuda()
       train_batch_sampler_2 = SemiSupervisedSampler(
             trainset_2.sup_indices, trainset_2.unsup_indices,
             args.batch_size, args.unsup_fraction,
