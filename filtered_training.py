@@ -334,6 +334,7 @@ if args.filter_unsup_data:
 
 if args.use_example_sampling:
       assert args.use_example_weighing == False, 'Can do only one of example sampling or weighing'
+      logger.info("Using example sampling instead of weighing")
       example_probabilties = example_weights[trainset.unsup_indices]
       example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)     
 
