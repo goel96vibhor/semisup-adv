@@ -139,52 +139,21 @@ class SemiSupervisedDataset(Dataset):
             self.unsup_indices = []
 
             if aux_data_filename is not None:
-                assert base_dataset != 'mnist', 'Errtorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)taset'
-                assert base_dataset != 'qmnist', 'Ertorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)dataset'
-                aux_path = os.path.join(kwargs['roottorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
-                print("Loading data from %s" % aux_ptorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
+                assert base_dataset != 'mnist', 'Error, cant have unlabeled data for mnist dataset'
+                assert base_dataset != 'qmnist', 'Error, cant have unlabeled data for qmnist dataset'
+                aux_path = os.path.join(kwargs['root'], aux_data_filename)
+                print("Loading data from %s" % aux_path)
+
                 with open(aux_path, 'rb') as f:
                     aux = pickle.load(f)
                 aux_data = aux['data']
-                aux_targets = aux['extrapolated_targtorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
+                aux_targets = aux['extrapolated_targets']
                 orig_len = len(self.data)
-                self.unsup_indices.extend(range(origtorch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
+                self.unsup_indices.extend(range(orig_len, orig_len+len(aux_data)))
 
                 if aux_take_amount is not None:
-                    rng_state = np.random.get_state(torch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
-                    np.random.seed(take_amount_seed)torch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)
+                    rng_state = np.random.get_state()
+                    np.random.seed(take_amount_seed)
                     take_inds = np.random.choice(len(self.unsup_indices),
                                                  aux_take_amount, replace=False)
                     np.random.set_state(rng_state)
@@ -290,7 +259,7 @@ class SemiSupervisedSampler(Sampler):
         self.sup_batch_size = batch_size - unsup_batch_size
         self.unsup_probablities = unsup_probablities
         if self.unsup_probablities is not None:
-              assert len(self.unsup_probablities) == len(self.unsup_inds), "Probabilities length should match to indices length for sampling"
+              assert len(self.unsup_probablities) == len(self.unsup_inds), "Probabilities length should match"
         if num_batches is not None:
             self.num_batches = num_batches
         else:
