@@ -382,7 +382,7 @@ eval_test_loader = DataLoader(testset, batch_size=args.test_batch_size,
 train_loader_2 = None
 if args.use_distrib_selection:
       if args.use_example_sampling:
-            example_probabilties_2 = example_weights_2[trainset.unsup_indices_2]
+            example_probabilties_2 = example_weights_2[trainset_2.unsup_indices]
             example_weights_2 = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)
             example_weights_2 = example_weights_2.cuda()
       train_batch_sampler_2 = SemiSupervisedSampler(
