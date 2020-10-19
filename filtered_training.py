@@ -307,6 +307,7 @@ if args.filter_unsup_data:
       example_weights[trainset.unsup_indices] = filtered_unsup_weights
 
       if args.use_distrib_selection:
+            
             assert args.random_split_version != 1, "Random split version should be other than 1"
             assert args.use_distrib_concatenation !=1, "Use one of distribution selction or concatenation"
             filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
@@ -339,6 +340,10 @@ if args.use_example_sampling:
       example_probabilties = example_weights[trainset.unsup_indices]
       example_weights = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)     
       logger.info("Example weights shape %s" %(str(example_weights.shape)))
+      if args.use_distrib_selection:
+            example_probabilties_2 = example_weights_2[trainset_2.unsup_indices]
+            example_weights_2 = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)
+            example_weights_2 = example_weights_2.cuda()
 
       # print(trainset.unsup_indices[0:10])
 example_weights = example_weights.cuda()
@@ -380,11 +385,7 @@ eval_train_loader = DataLoader(trainset_eval, batch_size=args.test_batch_size,
 eval_test_loader = DataLoader(testset, batch_size=args.test_batch_size,
                               shuffle=False, **kwargs)
 train_loader_2 = None
-if args.use_distrib_selection:
-      if args.use_example_sampling:
-            example_probabilties_2 = example_weights_2[trainset_2.unsup_indices]
-            example_weights_2 = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)
-            example_weights_2 = example_weights_2.cuda()
+if args.use_distrib_selection:      
       train_batch_sampler_2 = SemiSupervisedSampler(
             trainset_2.sup_indices, trainset_2.unsup_indices,
             args.batch_size, args.unsup_fraction,
