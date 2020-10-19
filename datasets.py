@@ -282,7 +282,7 @@ class SemiSupervisedSampler(Sampler):
                 if self.sup_batch_size < self.batch_size:
                     if self.unsup_probabilities is not None:
                           unsup_extend_batch = np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probabilities)
-                          print("selected batch using probabilities")
+                          print("selected batch using probabilities with size %d " %(len(unsup_extend_batch)))
                     else:
                           unsup_extend_batch = torch.randint(high=len(self.unsup_inds), size=(self.batch_size - len(batch),), dtype=torch.int64)
                     batch.extend([self.unsup_inds[i] for i in unsup_extend_batch])

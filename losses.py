@@ -162,6 +162,9 @@ def trades_non_adv_loss(model,
     else:
       assert indexes is not None, "indexes can not be None"
       loss_natural = F.cross_entropy(logits, y, ignore_index=-1, reduction = 'none')
+      print(indexes.shape)
+      print(loss_natural.shape)
+      print(example_weights.shape)
       loss_natural = torch.mean(torch.mul(loss_natural, example_weights[indexes]))
       # if 1 in indexes:
       #       print("printing example weights for batch")
