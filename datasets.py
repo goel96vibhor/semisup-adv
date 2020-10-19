@@ -257,9 +257,9 @@ class SemiSupervisedSampler(Sampler):
         self.batch_size = batch_size
         unsup_batch_size = int(batch_size * unsup_fraction)
         self.sup_batch_size = batch_size - unsup_batch_size
-        self.unsup_probablities = unsup_probablities
-        if self.unsup_probablities is not None:
-              assert len(self.unsup_probablities) == len(self.unsup_inds), "Probabilities length should match"
+        self.unsup_probabilities = unsup_probabilities
+        if self.unsup_probabilities is not None:
+              assert len(self.unsup_probabilities) == len(self.unsup_inds), "Probabilities length should match"
         if num_batches is not None:
             self.num_batches = num_batches
         else:
@@ -279,8 +279,8 @@ class SemiSupervisedSampler(Sampler):
                     break
                 batch = sup_inds_shuffled[sup_k:(sup_k + self.sup_batch_size)]
                 if self.sup_batch_size < self.batch_size:
-                    if self.unsup_probablities is not None:
-                          unsup_extend_batch = np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probablities)
+                    if self.unsup_probabilities is not None:
+                          unsup_extend_batch = np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probabilities)
                           print("selected batch using probabilities")
                     else:
                           unsup_extend_batch = torch.randint(high=len(self.unsup_inds), size=(self.batch_size - len(batch),), dtype=torch.int64)
