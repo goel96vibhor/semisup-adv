@@ -278,6 +278,7 @@ trainset = SemiSupervisedDataset(base_dataset=args.dataset,
                                  add_aux_labels=not args.remove_pseudo_labels,
                                  aux_take_amount=args.aux_take_amount)
 example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+total_unsup_size = len(trainset.unsup_indices)
 example_weights_2 = None
 example_probabilties = None
 example_probabilties_2 = None
@@ -336,7 +337,7 @@ if args.use_example_sampling:
       assert args.use_example_weighing == False, 'Can do only one of example sampling or weighing'
       logger.info("Using example sampling instead of weighing")
       example_probabilties = example_weights[trainset.unsup_indices]
-      example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)     
+      example_weights = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)     
       logger.info("Example weights shape %s" %(str(example_weights.shape)))
 
       # print(trainset.unsup_indices[0:10])
@@ -382,7 +383,7 @@ train_loader_2 = None
 if args.use_distrib_selection:
       if args.use_example_sampling:
             example_probabilties_2 = example_weights_2[trainset.unsup_indices_2]
-            example_weights_2 = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+            example_weights_2 = torch.ones(len(trainset.sup_indices) + total_unsup_size, dtype=torch.float64)
             example_weights_2 = example_weights_2.cuda()
       train_batch_sampler_2 = SemiSupervisedSampler(
             trainset_2.sup_indices, trainset_2.unsup_indices,
