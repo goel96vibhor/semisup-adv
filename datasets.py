@@ -139,20 +139,52 @@ class SemiSupervisedDataset(Dataset):
             self.unsup_indices = []
 
             if aux_data_filename is not None:
-                assert base_dataset != 'mnist', 'Error, cant have unlabeled data for mnist dataset'
-                assert base_dataset != 'qmnist', 'Error, cant have unlabeled data for qmnist dataset'
-                aux_path = os.path.join(kwargs['root'], aux_data_filename)
-                print("Loading data from %s" % aux_path)
+                assert base_dataset != 'mnist', 'Errtorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)taset'
+                assert base_dataset != 'qmnist', 'Ertorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)dataset'
+                aux_path = os.path.join(kwargs['roottorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
+                print("Loading data from %s" % aux_ptorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
                 with open(aux_path, 'rb') as f:
                     aux = pickle.load(f)
                 aux_data = aux['data']
-                aux_targets = aux['extrapolated_targets']
+                aux_targets = aux['extrapolated_targtorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
                 orig_len = len(self.data)
-                self.unsup_indices.extend(range(orig_len, orig_len+len(aux_data)))
+                self.unsup_indices.extend(range(origtorch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
 
                 if aux_take_amount is not None:
-                    rng_state = np.random.get_state()
-                    np.random.seed(take_amount_seed)
+                    rng_state = np.random.get_state(torch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
+                    np.random.seed(take_amount_seed)torch.randint(high=len(self.unsup_inds),
+                                                size=(
+                                                    self.batch_size - len(
+                                                        batch),),
+                                                dtype=torch.int64)
                     take_inds = np.random.choice(len(self.unsup_indices),
                                                  aux_take_amount, replace=False)
                     np.random.set_state(rng_state)
@@ -245,7 +277,7 @@ class SemiSupervisedDataset(Dataset):
 class SemiSupervisedSampler(Sampler):
     """Balanced sampling from the labeled and unlabeled data"""
     def __init__(self, sup_inds, unsup_inds, batch_size, unsup_fraction=0.5,
-                 num_batches=None):
+                 num_batches=None, unsup_probablities = None):
         if unsup_fraction is None or unsup_fraction < 0:
             self.sup_inds = sup_inds + unsup_inds
             unsup_fraction = 0.0
@@ -256,12 +288,15 @@ class SemiSupervisedSampler(Sampler):
         self.batch_size = batch_size
         unsup_batch_size = int(batch_size * unsup_fraction)
         self.sup_batch_size = batch_size - unsup_batch_size
-        
+        self.unsup_probablities = unsup_probablities
+        if self.unsup_probablities is not None:
+              assert len(self.unsup_probablities) == len(self.unsup_inds), "Probabilities length should match to indices length for sampling"
         if num_batches is not None:
             self.num_batches = num_batches
         else:
             self.num_batches = int(
                 np.ceil(len(self.sup_inds) / self.sup_batch_size))
+        
 
         super().__init__(None)
 
@@ -275,12 +310,11 @@ class SemiSupervisedSampler(Sampler):
                     break
                 batch = sup_inds_shuffled[sup_k:(sup_k + self.sup_batch_size)]
                 if self.sup_batch_size < self.batch_size:
-                    batch.extend([self.unsup_inds[i] for i in
-                                  torch.randint(high=len(self.unsup_inds),
-                                                size=(
-                                                    self.batch_size - len(
-                                                        batch),),
-                                                dtype=torch.int64)])
+                    if self.unsup_probablities is not None:
+                          unsup_extend_batch = np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probablities)
+                    else:
+                          unsup_extend_batch = torch.randint(high=len(self.unsup_inds), size=(self.batch_size - len(batch),), dtype=torch.int64)
+                    batch.extend([self.unsup_inds[i] for i in unsup_extend_batch])
                 # this shuffle operation is very important, without it
                 # batch-norm / DataParallel hell ensues
                 np.random.shuffle(batch)

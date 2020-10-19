@@ -83,8 +83,12 @@ parser.add_argument('--pretrained_epochs', default=14,type=int, help='number of 
 parser.add_argument('--unsup_std_deviations', type=float, default=1.0, help='Number of std to consider')
 parser.add_argument('--filter_unsup_data', default=1, type=int, help='Whether to filter unsupervised data')
 parser.add_argument('--use_two_detector_filtering', default=1, type=int, help='Whether to filter unsupervised data using two detector')
-parser.add_argument('--use_example_weighing', default=1, type=int, help='Whether to use example weighing for detectors using two detector')
+parser.add_argument('--use_example_weighing', default=0, type=int, help='Whether to use example weighing for detectors using two detector')
+parser.add_argument('--use_example_sampling', default=1, type=int, help='Whether to sample unlabled examples for detectors using two detector')
 parser.add_argument('--example_weight_alpha', type=float, default=1.0, help='hyperparamter for example weights')
+parser.add_argument('--random_split_version', type=int, default=2, help='Version of random split')
+parser.add_argument('--use_distrib_selection', default=0, type=int, help='Whether to use distribution using pair of two detector')
+parser.add_argument('--use_distrib_concatenation', default=0, type=int, help='Whether to use distribution using pair of two detector')
 # Optimizer config
 parser.add_argument('--weight_decay', '--wd', default=5e-4, type=float)
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR', help='Learning rate')
@@ -124,12 +128,17 @@ parser.add_argument('--cutout', action='store_true', default=False, help='Use cu
 args = parser.parse_args()
 
 
-def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_detector_filtering = False, use_example_weighing = False, alpha = 1):
+def get_filtered_indices(args, example_outputs, random_split_version = 1):
       weights = None
-      if use_two_detector_filtering:
-            logging.info('Filtering unsup indices using two detector predictions')
-            det1_unlab_file = 'selection_model/testing_head_0.1/unlabeled_percy_500k.csv'
-            det2_unlab_file = 'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv'            
+      print("random pslit version %d" %(random_split_version))
+      if args.use_two_detector_filtering:
+            if (not (args.use_distrib_selection or args.use_distrib_concatenation)) or (random_split_version == 1):
+                  det1_unlab_file = 'selection_model/testing_head_0.1/unlabeled_percy_500k.csv'
+                  det2_unlab_file = 'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv'            
+            else:
+                  det1_unlab_file = 'selection_model/testing_head_0.1_v'+str(args.random_split_version) + '_1Mstart/unlabeled_percy_500k.csv'
+                  det2_unlab_file = 'selection_model/testing_tail_0.1_v'+str(args.random_split_version) + '_1Mstart/unlabeled_percy_500k.csv'
+            logging.info('Filtering unsup indices using two detector predictions from file %s' %(det1_unlab_file))
             det1_unlab_df = pd.read_csv(det1_unlab_file)
             det2_unlab_df = pd.read_csv(det2_unlab_file)
             det1_unlab_df = det1_unlab_df.set_index(['0']).sort_index()
@@ -152,11 +161,11 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_de
             indices = det1_unlab_preds.index[mask]
             indices = torch.tensor(indices, dtype = torch.int)
             logging.info("Filtered indices from unlabeled softmax confidences with count %s" %(indices.shape))
-            if use_example_weighing:
+            if args.use_example_weighing or args.use_example_sampling:
                   # weights = torch.ones(indices.shape)
                   # weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].iloc[:,10].values)
                   weights = torch.tensor((abs(det1_unlab_scores-det2_unlab_scores))[mask].sum(axis=1).values)                  
-                  weights = torch.exp(alpha*weights)
+                  weights = torch.exp(args.example_weight_alpha*weights)
                   # print(weights.shape)
                   # print(indices.shape)
                   assert weights.shape == indices.shape , "shapes of indices and weights are not equal"
@@ -167,13 +176,13 @@ def get_filtered_indices(example_outputs, unsup_std_deviations = 1.0, use_two_de
             soft_max = torch.max(soft_out, dim=1).values
             mu, std = norm.fit(soft_max)
             upper_limit = mu
-            lower_limit = mu - (unsup_std_deviations*std)
-            # upper_limit = mu + unsup_std_deviations*std
-            # lower_limit = mu - unsup_std_deviations*std
+            lower_limit = mu - (args.unsup_std_deviations*std)
+            # upper_limit = mu + args.unsup_std_deviations*std
+            # lower_limit = mu - args.unsup_std_deviations*std
             indices = ((soft_max < upper_limit) & (soft_max > lower_limit)).nonzero().view(-1)
             logging.info("Filtered indices from unlabeled softmax confidences with upper limit %0.4f, lower limit %0.4f, count %s" %(upper_limit, lower_limit, indices.shape))
       if weights is None:
-            weights = torch.ones(indices.shape)
+            weights = torch.ones(indices.shape, dtype = torch.float64)
       return indices, weights
 
 
@@ -220,6 +229,7 @@ cudnn.benchmark = True
 
 use_cuda = torch.cuda.is_available()
 torch.manual_seed(args.seed)
+np.random.seed(args.seed)
 device = torch.device('cuda' if use_cuda else 'cpu')
 # ------------------------------------------------------------------------------
 
@@ -267,22 +277,67 @@ trainset = SemiSupervisedDataset(base_dataset=args.dataset,
                                  aux_data_filename=args.aux_data_filename,
                                  add_aux_labels=not args.remove_pseudo_labels,
                                  aux_take_amount=args.aux_take_amount)
-
+example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+example_weights_2 = None
+example_probabilties = None
+example_probabilties_2 = None
+if args.use_distrib_selection:
+      trainset_2 = SemiSupervisedDataset(base_dataset=args.dataset,
+                                 add_svhn_extra=args.svhn_extra,
+                                 root=args.data_dir, train=True,
+                                 extend_svhn = args.extend_svhn,
+                                 extend_svhn_fraction = args.extend_svhn_fraction,
+                                 download=True, transform=transform_train,
+                                 aux_data_filename=args.aux_data_filename,
+                                 add_aux_labels=not args.remove_pseudo_labels,
+                                 aux_take_amount=args.aux_take_amount)
+      example_weights_2 = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)                                 
 # num_batches=50000 enforces the definition of an "epoch" as passing through 50K
 # datapoints
 # TODO: make sure that this code works also when trainset.unsup_indices=[]
-example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+
 if args.filter_unsup_data:
       example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                   args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
-      filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(example_outputs, args.unsup_std_deviations, args.use_two_detector_filtering, 
-                                                                  args.use_example_weighing, 
-                                                                  alpha = args.example_weight_alpha)
+      filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(args, example_outputs, random_split_version = 1)
       logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
       print(filtered_unsup_indices[0:10])
       trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
       example_weights[trainset.unsup_indices] = filtered_unsup_weights
-      print(trainset.unsup_indices[0:10])
+
+      if args.use_distrib_selection:
+            assert args.random_split_version != 1, "Random split version should be other than 1"
+            assert args.use_distrib_concatenation !=1, "Use one of distribution selction or concatenation"
+            filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
+            logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
+            print(filtered_unsup_indices_2[0:10])
+            trainset_2.unsup_indices = torch.add(filtered_unsup_indices_2, len(trainset_2.sup_indices)).tolist()
+            example_weights_2[trainset_2.unsup_indices] = filtered_unsup_weights_2
+            example_weights_2 = example_weights_2.cuda()
+      elif args.use_distrib_concatenation:
+            assert args.random_split_version != 1, "Random split version should be other than 1"
+            filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
+            logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
+            unsup_indices_2 = torch.add(filtered_unsup_indices_2, len(trainset.sup_indices)).tolist()
+            combined = torch.cat((torch.tensor(trainset.unsup_indices), torch.tensor(unsup_indices_2)))
+            uniques, counts = combined.unique(return_counts=True)
+            trainset.unsup_indices = uniques[counts >= 1].tolist()
+            intersection = uniques[counts > 1]
+            logger.info("Intersection size %d " %(intersection.shape[0]))
+            print(intersection[0:5])
+            print(example_weights[intersection[0:5]])
+            print(filtered_unsup_weights_2[0:10], unsup_indices_2[0:10])
+            example_weights[unsup_indices_2] = example_weights[unsup_indices_2] + (torch.tensor(filtered_unsup_weights_2) - 1)
+            print(example_weights[intersection[0:5]])
+            logger.info("Final filtered indices obtained after concatenation: %d, Sum weights_1 %0.4f weights_2 %0.4f Concat %0.4f"
+                  %(len(trainset.unsup_indices), torch.sum(filtered_unsup_weights), torch.sum(filtered_unsup_weights_2), torch.sum(example_weights[trainset.unsup_indices])))
+
+if args.use_example_sampling:
+      assert args.use_example_weighing == False, 'Can do only one of example sampling or weighing'
+      example_probabilties = example_weights[trainset.unsup_indices]
+      example_weights = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)     
+
+      # print(trainset.unsup_indices[0:10])
 example_weights = example_weights.cuda()
 epoch_datapoint_count = trainset.__len__()
 if args.train_take_amount is not None:
@@ -293,14 +348,14 @@ logger.info("epoch datapoints count: %d" %(epoch_datapoint_count))
 train_batch_sampler = SemiSupervisedSampler(
     trainset.sup_indices, trainset.unsup_indices,
     args.batch_size, args.unsup_fraction,
-    num_batches=int(np.ceil(epoch_datapoint_count / args.batch_size)))
+    num_batches=int(np.ceil(epoch_datapoint_count / args.batch_size)), unsup_probabilities = example_probabilties)
 epoch_size = len(train_batch_sampler) * args.batch_size
 
 logger.info("Epoch size: %d" %(epoch_size))
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 train_loader = DataLoader(trainset, batch_sampler=train_batch_sampler, **kwargs)
-
+logger.info("Created train loader 1 with size %d" %(len(trainset)))
 testset = SemiSupervisedDataset(base_dataset=args.dataset,
                                 root=args.data_dir, train=False,
                                 download=True,
@@ -321,19 +376,40 @@ eval_train_loader = DataLoader(trainset_eval, batch_size=args.test_batch_size,
 
 eval_test_loader = DataLoader(testset, batch_size=args.test_batch_size,
                               shuffle=False, **kwargs)
+train_loader_2 = None
+if args.use_distrib_selection:
+      if args.use_example_sampling:
+            example_probabilties_2 = example_weights_2[trainset.unsup_indices_2]
+            example_weights_2 = torch.ones(len(trainset.sup_indices) + len(trainset.unsup_indices), dtype=torch.float64)
+      train_batch_sampler_2 = SemiSupervisedSampler(
+            trainset_2.sup_indices, trainset_2.unsup_indices,
+            args.batch_size, args.unsup_fraction,
+            num_batches=int(np.ceil(epoch_datapoint_count / args.batch_size)), unsup_probabilities = example_probabilties_2)
+      train_loader_2 = DataLoader(trainset_2, batch_sampler=train_batch_sampler_2, **kwargs)
+      logger.info("Created train loader 2 with size %d" %(len(trainset_2)))
+
 # ------------------------------------------------------------------------------
 
 # ----------------------- TRAIN AND EVAL FUNCTIONS -----------------------------
-def train(args, model, device, train_loader, optimizer, epoch, detector_model = None, example_weights = None):
+def train(args, model, device, train_loader, optimizer, epoch, detector_model = None, example_weights = None, train_loader_2 = None, example_weights_2 = None):
     model.train()
     train_metrics = []
     epsilon = args.epsilon
     total_main_loss = 0
     total_detector_loss = 0
     total_count = 0.01
+#     if train_loader_2 is None:
+#           train_loader_2 = train_loader
+    loss_1_back_count = 0
+    loss_2_back_count = 0
+    data_2 = None
+    target_2 = None
+    indexes_2 = None
     for batch_idx, (data, target, indexes) in enumerate(train_loader):
+#     for batch_idx, ((data, target, indexes), (data_2, target_2, indexes_2)) in enumerate(zip(train_loader, train_loader_2)):
         data, target = data.to(device), target.to(device)
-
+        if args.use_distrib_selection:
+            data_2, target_2 = data_2.to(device), target_2.to(device)
         optimizer.zero_grad()
 
         # calculate robust loss
@@ -375,6 +451,13 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model = 
                 entropy_weight=args.entropy_weight,
                 example_weights = example_weights, 
                 indexes = indexes)
+            
+            if args.use_distrib_selection:
+                  assert example_weights_2 is not None, "Weights for example none for second version"
+                  optimizer.zero_grad()
+                  (loss_2, natural_loss, robust_loss, entropy_loss_unlabeled) = trades_non_adv_loss( model=model, x_natural=data_2, y=target_2, optimizer=optimizer,
+                                    step_size=args.pgd_step_size, epsilon=epsilon, beta=args.beta, distance=args.distance, entropy_weight=args.entropy_weight,
+                                    example_weights = example_weights_2, indexes = indexes_2)                              
         elif args.loss == 'trades':
             # The TRADES KL-robustness regularization term proposed by
             # Zhang et al., with some additional features
@@ -400,7 +483,14 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model = 
             entropy_loss_unlabeled = torch.Tensor([0.])
             natural_loss = robust_loss = loss
 
-        loss.backward()
+        if args.use_distrib_selection and loss_2 > loss:
+            #   logging.info("back from loss 2")
+              loss_2_back_count = loss_2_back_count + 1 
+              loss_2.backward()
+        else:
+            #   logging.info("back from loss 1")
+              loss_1_back_count = loss_1_back_count + 1 
+              loss.backward()
         optimizer.step()
 
         train_metrics.append(dict(
@@ -413,9 +503,9 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model = 
         # print progress
         if batch_idx % args.log_interval == 0:
             logging.info(
-                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tMain Loss: {:.6f}\tDetector Loss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), epoch_size,
-                           100. * batch_idx / len(train_loader), loss.item(), total_main_loss/total_count, total_detector_loss/total_count))
+                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tMain Loss: {:.6f}\tDetector Loss: {:.6f}\tloss1 count: {:d}\tloss2 count: {:d}'.format(
+                    epoch, batch_idx * len(data), epoch_size, 100. * batch_idx / len(train_loader), 
+                    loss.item(), total_main_loss/total_count, total_detector_loss/total_count, loss_1_back_count, loss_2_back_count))
 
     return train_metrics
 
@@ -491,7 +581,6 @@ def eval(args, model, device, eval_set, loader):
 
     return eval_data
 
-
 def adjust_learning_rate(optimizer, epoch):
     """decrease the learning rate"""
     lr = args.lr
@@ -514,7 +603,7 @@ def adjust_learning_rate(optimizer, epoch):
     # schedule as in WRN paper
     elif schedule == 'wrn':
         if epoch >= 0.3 * args.epochs:
-            lr = args.lr * 0.2
+              lr = args.lr * 0.2
         if epoch >= 0.6 * args.epochs:
             lr = args.lr * 0.2 * 0.2
         if epoch >= 0.8 * args.epochs:
@@ -524,7 +613,6 @@ def adjust_learning_rate(optimizer, epoch):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     return lr
-
 # ------------------------------------------------------------------------------
 
 # ----------------------------- TRAINING LOOP ----------------------------------
@@ -551,7 +639,8 @@ def main():
         lr = adjust_learning_rate(optimizer, epoch)
         logger.info('Setting learning rate to %g' % lr)
         # adversarial training
-        train_data = train(args, model, device, train_loader, optimizer, epoch, detector_model = detector_model, example_weights = example_weights)
+        train_data = train(args, model, device, train_loader, optimizer, epoch, detector_model = detector_model, 
+                              example_weights = example_weights, train_loader_2 = train_loader_2, example_weights_2 = example_weights_2)
         train_df = train_df.append(pd.DataFrame(train_data), ignore_index=True)
 
         # evaluation on natural examples

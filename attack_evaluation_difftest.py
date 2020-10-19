@@ -124,7 +124,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='custom', help='The dataset', 
                               choices=['cifar10', 'svhn', 'custom', 'benrecht_cifar10'])
     parser.add_argument('--qmnist10k', default=1, type=int, help='whether to use qmnist 10k or 60k dataset for evaluation')                        
-    parser.add_argument('--output_suffix', default='_cifarv2', type=str, help='String to add to log filename')
+    parser.add_argument('--output_suffix', default=None, type=str, help='String to add to log filename')
     # model configs 
     parser.add_argument('--model_path', help='Model for attack evaluation')
     parser.add_argument('--model', '-m', default='wrn-28-10', type=str, help='Name of the model')
@@ -156,17 +156,17 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     torch.manual_seed(args.random_seed)
-    if args.output_suffix:
+    if args.output_suffix is not None:
           output_suffix = args.output_suffix
     else:
           output_suffix = '_' + args.dataset
     if args.use_detector_evaluation:
           output_dir, checkpoint_name = os.path.split(args.detector_model_path)
-          output_suffix = output_suffix+'_detector'
+          output_suffix = 'eval_' + output_suffix+'_detector'
     else:
           output_dir, checkpoint_name = os.path.split(args.model_path)
           epoch = int(re.search('epoch(\d+)', checkpoint_name).group(1))
-          output_suffix = str(epoch) + output_suffix
+          output_suffix = 'eval_' + str(epoch) + output_suffix
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(message)s",
@@ -178,7 +178,7 @@ if __name__ == '__main__':
         ])
     logger = logging.getLogger()
 
-    results_dir = os.path.join(output_dir, args.output_suffix)
+    results_dir = os.path.join(output_dir, output_suffix)
     if not os.path.isdir(results_dir):
         os.mkdir(results_dir)
 
@@ -186,7 +186,9 @@ if __name__ == '__main__':
     logging.info('Args: %s' % args)
 
     # settings
-    use_cuda = not args.no_cuda and torch.cuda.is_available()
+    print(" cuda avaliable %d" %(torch.cuda.is_available()))
+    use_cuda = (not args.no_cuda) and torch.cuda.is_available()
+    print(" cuda using %d" %(use_cuda))
     device = torch.device("cuda" if use_cuda else "cpu")
     dl_kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
@@ -223,6 +225,7 @@ if __name__ == '__main__':
         model = load_detector_model(args)
     else:
         checkpoint = torch.load(args.model_path)
+      #   print(checkpoint.keys())
         state_dict = checkpoint.get('state_dict', checkpoint)
         num_classes = checkpoint.get('num_classes', 10)
         normalize_input = checkpoint.get('normalize_input', False)
@@ -230,12 +233,15 @@ if __name__ == '__main__':
         print(normalize_input)
         logging.info("using %s model for evaluation from path %s" %(args.model, args.model_path))
         model = get_model(args.model, num_classes=num_classes, normalize_input=normalize_input)
+      #   print(state_dict.keys())
         if use_cuda:
+            print("using cuda")
             model = torch.nn.DataParallel(model).cuda()
             cudnn.benchmark = True
             if not all([k.startswith('module') for k in state_dict]):
                   state_dict = {'module.' + k: v for k, v in state_dict.items()}
         else:
+            print("not using cuda")
             def strip_data_parallel(s):
                   if s.startswith('module'):
                         return s[len('module.'):]
