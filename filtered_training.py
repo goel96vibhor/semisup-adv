@@ -410,8 +410,9 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model = 
     data_2 = None
     target_2 = None
     indexes_2 = None
-    for batch_idx, (data, target, indexes) in enumerate(train_loader):
-#     for batch_idx, ((data, target, indexes), (data_2, target_2, indexes_2)) in enumerate(zip(train_loader, train_loader_2)):
+#     for batch_idx, (data, target, indexes) in enumerate(train_loader):
+    for batch_idx, ((data, target, indexes), (data_2, target_2, indexes_2)) in enumerate(zip(train_loader, train_loader_2)):
+
         data, target = data.to(device), target.to(device)
         if args.use_distrib_selection:
             data_2, target_2 = data_2.to(device), target_2.to(device)

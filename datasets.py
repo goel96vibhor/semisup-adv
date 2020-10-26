@@ -257,7 +257,7 @@ class SemiSupervisedSampler(Sampler):
         self.batch_size = batch_size
         unsup_batch_size = int(batch_size * unsup_fraction)
         self.sup_batch_size = batch_size - unsup_batch_size
-        self.unsup_probabilities = torch.div(unsup_probabilities, torch.sum(unsup_probabilities))
+        self.unsup_probabilities = torch.div(unsup_probabilities, torch.sum(unsup_probabilities)).cpu().numpy()
         # self.unsup_probabilities = unsup_probabilities.div(torch.sum(unsup_probabilities).values) #torch.nn.Softmax(unsup_probabilities)
         if self.unsup_probabilities is not None:
               assert len(self.unsup_probabilities) == len(self.unsup_inds), "Probabilities length should match"
