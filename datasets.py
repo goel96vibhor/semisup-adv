@@ -21,42 +21,42 @@ from dataset_utils.empty_dataset import Empty_Dataset
 
 class SemiSupervisedDataset(Dataset):
     def __init__(self,
-                 base_dataset='cifar10',
-                 take_amount=None,
-                 extend_svhn = False,
-                 extend_svhn_fraction = 0.5,
-                 take_amount_seed=13,
-                 add_svhn_extra=False,
-                 qmnist10k=False,
-                 aux_data_filename=None,
-                 add_aux_labels=False,
-                 aux_take_amount=None,
-                 train=False, custom_dataset = None, 
-                 **kwargs):
+                base_dataset='cifar10',
+                take_amount=None,
+                extend_svhn = False,
+                extend_svhn_fraction = 0.5,
+                take_amount_seed=13,
+                add_svhn_extra=False,
+                qmnist10k=False,
+                aux_data_filename=None,
+                add_aux_labels=False,
+                aux_take_amount=None,
+                train=False, custom_dataset = None, 
+                **kwargs):
         """A dataset with auxiliary pseudo-labeled data"""
         logger = logging.getLogger()
         if base_dataset == 'cifar10':
-            print("loading cifar10 dataset")
+            print("Loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
         elif base_dataset == 'tinyimages':
             print("Loading TinyImages dataset")
             self.dataset = TinyImages(**kwargs)
         elif base_dataset == 'cinic10':
-            print("loading cinic 10 dataset") 
+            print("Loading cinic 10 dataset") 
             self.dataset = get_cinic_dataset(train = train)             
             # self.dataset.targets = self.dataset.labels
         elif base_dataset == 'benrecht_cifar10':
-            print("loading Ben recht cifar10 dataset")   
+            print("Loading Ben recht cifar10 dataset")   
             self.dataset = BenRecht_cifar10_dataset(train = train, **kwargs)
         elif base_dataset == 'cifar_own':
             print("Using own cifar implementation")
             self.dataset = cifar_own.CIFAR10(train=train, **kwargs)
         elif base_dataset == 'qmnist_own':
             if qmnist10k == True:
-                  self.dataset = qmnist_own.QMNIST(what='test10k', compat=False, **kwargs)
-                  self.dataset.targets = self.dataset.targets[:,0]
+                self.dataset = qmnist_own.QMNIST(what='test10k', compat=False, **kwargs)
+                self.dataset.targets = self.dataset.targets[:,0]
             else:
-                  self.dataset = qmnist_own.QMNIST(train=train, **kwargs)  
+                self.dataset = qmnist_own.QMNIST(train=train, **kwargs)  
             
             # the qmnist testing set, do not download.
         elif base_dataset == 'mnist':
@@ -71,7 +71,7 @@ class SemiSupervisedDataset(Dataset):
         if extend_svhn or base_dataset == 'svhn':
             print("loading svhn dataset")
             transform_train = transforms.Compose([
-                  transforms.ToTensor(),
+                transforms.ToTensor(),
             ])
             if train:
                 svhn_dataset = SVHN(root = 'data', split='train', transform = transform_train)
@@ -88,8 +88,8 @@ class SemiSupervisedDataset(Dataset):
                 rng_state = np.random.get_state()
                 np.random.seed(take_amount_seed)
                 take_inds = np.random.choice(svhn_dataset.data.shape[0],
-                                             svhn_size, replace=False).astype(int)
-            #     print(take_inds.dtype)
+                                                svhn_size, replace=False).astype(int)
+                # print(take_inds.dtype)
                 np.random.set_state(rng_state)
 
                 
@@ -111,8 +111,8 @@ class SemiSupervisedDataset(Dataset):
                 self.data = np.concatenate([self.data, svhn_extra.data])
                 self.targets.extend(svhn_extra.labels)
         
-      #   else:
-      #       raise ValueError('Dataset %s not supported' % base_dataset)
+        # else:
+        #     raise ValueError('Dataset %s not supported' % base_dataset)
         self.base_dataset = base_dataset
         self.train = train
         self.sup_indices = list(range(len(self.targets)))
@@ -122,8 +122,8 @@ class SemiSupervisedDataset(Dataset):
                 rng_state = np.random.get_state()
                 np.random.seed(take_amount_seed)
                 take_inds = np.random.choice(len(self.sup_indices),
-                                             take_amount, replace=False).astype(int)
-            #     print(take_inds.dtype)
+                                                take_amount, replace=False).astype(int)
+                # print(take_inds.dtype)
                 np.random.set_state(rng_state)
 
                 
@@ -155,7 +155,7 @@ class SemiSupervisedDataset(Dataset):
                     rng_state = np.random.get_state()
                     np.random.seed(take_amount_seed)
                     take_inds = np.random.choice(len(self.unsup_indices),
-                                                 aux_take_amount, replace=False)
+                                                    aux_take_amount, replace=False)
                     np.random.set_state(rng_state)
                     logger = logging.getLogger()
                     logger.info(
@@ -177,7 +177,6 @@ class SemiSupervisedDataset(Dataset):
                 print(self.targets.dtype)
                 # note that we use unsup indices to track the labeled datapoints
                 # whose labels are "fake"
-                
 
             logger = logging.getLogger()
             logger.info("Training set")
@@ -246,7 +245,7 @@ class SemiSupervisedDataset(Dataset):
 class SemiSupervisedSampler(Sampler):
     """Balanced sampling from the labeled and unlabeled data"""
     def __init__(self, sup_inds, unsup_inds, batch_size, unsup_fraction=0.5,
-                 num_batches=None, unsup_probabilities = None):
+                    num_batches=None, unsup_probabilities=None, num_phase_shifts=1):
         if unsup_fraction is None or unsup_fraction < 0:
             self.sup_inds = sup_inds + unsup_inds
             unsup_fraction = 0.0
@@ -255,43 +254,46 @@ class SemiSupervisedSampler(Sampler):
             self.unsup_inds = unsup_inds
         print(self.unsup_inds[0:20])
         self.batch_size = batch_size
+        self.num_phase_shifts = num_phase_shifts
         unsup_batch_size = int(batch_size * unsup_fraction)
         self.sup_batch_size = batch_size - unsup_batch_size
-        self.unsup_probabilities = torch.div(unsup_probabilities, torch.sum(unsup_probabilities)).cpu().numpy()
+        self.unsup_probabilities = torch.div(unsup_probabilities, torch.sum(unsup_probabilities)).cpu().numpy() if unsup_probabilities is not None else None
         # self.unsup_probabilities = unsup_probabilities.div(torch.sum(unsup_probabilities).values) #torch.nn.Softmax(unsup_probabilities)
         if self.unsup_probabilities is not None:
-              assert len(self.unsup_probabilities) == len(self.unsup_inds), "Probabilities length should match"
+            assert len(self.unsup_probabilities) == len(self.unsup_inds), "Probabilities length should match"
         if num_batches is not None:
             self.num_batches = num_batches
         else:
             self.num_batches = int(
                 np.ceil(len(self.sup_inds) / self.sup_batch_size))
         
-
         super().__init__(None)
 
     def __iter__(self):
         batch_counter = 0
         while batch_counter < self.num_batches:
             sup_inds_shuffled = [self.sup_inds[i]
-                                 for i in torch.randperm(len(self.sup_inds))]
+                                    for i in torch.randperm(len(self.sup_inds))]
             for sup_k in range(0, len(self.sup_inds), self.sup_batch_size):
                 if batch_counter == self.num_batches:
                     break
                 batch = sup_inds_shuffled[sup_k:(sup_k + self.sup_batch_size)]
                 if self.sup_batch_size < self.batch_size:
                     if self.unsup_probabilities is not None:
-                          unsup_extend_batch = np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probabilities)
-                        #   print("selected batch using probabilities with size %d " %(len(unsup_extend_batch)))
+                        unsup_extend_batches = [np.random.choice(range(len(self.unsup_inds)), self.batch_size - len(batch), p=self.unsup_probabilities) for _ in range(self.num_phase_shifts)]
+                        # print("selected batch using probabilities with size %d " %(len(unsup_extend_batches[0])))
                     else:
-                          unsup_extend_batch = torch.randint(high=len(self.unsup_inds), size=(self.batch_size - len(batch),), dtype=torch.int64)
-                    batch.extend([self.unsup_inds[i] for i in unsup_extend_batch])
+                        unsup_extend_batches = [torch.randint(high=len(self.unsup_inds), size=(self.batch_size - len(batch),), dtype=torch.int64) for _ in range(self.num_phase_shifts)]
+
+                    for unsup_extend_batch in unsup_extend_batches:
+                        batch.extend([self.unsup_inds[i] for i in unsup_extend_batch])
                 # this shuffle operation is very important, without it
                 # batch-norm / DataParallel hell ensues
-                np.random.shuffle(batch)
+                if len(batch) == self.batch_size:
+                    np.random.shuffle(batch)
                 yield batch
-            #     print(batch)
+                # print(batch)
                 batch_counter += 1
-        
+
     def __len__(self):
         return self.num_batches
