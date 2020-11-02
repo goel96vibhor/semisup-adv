@@ -86,6 +86,7 @@ parser.add_argument('--unsup_std_deviations', type=float, default=1.0, help='Num
 parser.add_argument('--filter_unsup_data', default=1, type=int, help='Whether to filter unsupervised data')
 parser.add_argument('--use_two_detector_filtering', default=0, type=int, help='Whether to filter unsupervised data using two detector')
 parser.add_argument('--use_multi_detector_filtering', default=0, type=int, help='Whether to filter unsupervised data using multiple detectors')
+parser.add_argument('--num_detectors', default=4, type=int, help='Number of detectors to use in case of multi detector filtering')
 parser.add_argument('--use_example_weighing', default=0, type=int, help='Whether to use example weighing for detectors using two detector')
 parser.add_argument('--use_example_sampling', default=1, type=int, help='Whether to sample unlabled examples for detectors using two detector')
 parser.add_argument('--example_weight_alpha', type=float, default=1.0, help='hyperparamter for example weights')
@@ -178,10 +179,14 @@ def get_filtered_indices(args, example_outputs, random_split_version = 1):
         unlab_det_files = ['selection_model/testing_head_0.1/unlabeled_percy_500k.csv',
             'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv',
             'selection_model/testing_head_0.1_v2_1Mstart/unlabeled_percy_500k.csv',
-            'selection_model/testing_tail_0.1_v2_1Mstart/unlabeled_percy_500k.csv']
-        logging.info(f'Filtering unsup indices using multi detector predictions from files: {unlab_det_files}')
+            'selection_model/testing_tail_0.1_v2_1Mstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_head_0.1_v3_500Kstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_head_0.1_v4_1.5Mstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1_v3_500Kstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1_v4_1.5Mstart/unlabeled_percy_500k.csv']
+        logging.info(f'Filtering unsup indices using multi detector predictions from files: {unlab_det_files[:args.num_detectors]}')
 
-        unlab_det_dfs = [pd.read_csv(unlab_det_file) for unlab_det_file in unlab_det_files]
+        unlab_det_dfs = [pd.read_csv(unlab_det_file) for unlab_det_file in unlab_det_files[:args.num_detectors]]
 
         unlab_det_dfs = [unlab_det_df.set_index(['0']).sort_index() for unlab_det_df in unlab_det_dfs]
 
