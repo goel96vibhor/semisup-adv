@@ -443,63 +443,50 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model=No
     for batch_idx, (data, target, indexes) in enumerate(train_loader):
     # for batch_idx, ((data, target, indexes), (data_2, target_2, indexes_2)) in enumerate(zip(train_loader, train_loader_2)):
         data, target = data.to(device), target.to(device)
-        worst_loss = float('-inf')
-        # worst_i = -1
-        unsup_size = int(args.batch_size * args.unsup_fraction)
-        sup_size = args.batch_size - unsup_size
-        for i in range(args.num_phase_shifts):
-            unsup_data = data[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-            unsup_target = target[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-            unsup_indexes = indexes[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-            (loss, natural_loss, robust_loss,
-                entropy_loss_unlabeled) = trades_non_adv_loss(
-                    model=model,
-                    x_natural=unsup_data,
-                    y=unsup_target,
-                    optimizer=optimizer,
-                    step_size=args.pgd_step_size,
-                    epsilon=epsilon,
-                    beta=args.beta,
-                    distance=args.distance,
-                    entropy_weight=args.entropy_weight,
-                    example_weights = example_weights, 
-                    indexes = unsup_indexes)
-            if loss > worst_loss:
-                worst_loss = loss
-                # worst_i = i
-                worst_batch = unsup_data
-                worst_target = unsup_target
-                worst_indexes = unsup_indexes
 
-        # print(f"Worst batch: {worst_i}, loss: {worst_loss}")
-        # assert worst_i != -1, "Error: worst batch not found"
+        if args.use_multi_detector_filtering:
+            worst_loss = float('-inf')
+            # worst_i = -1
+            unsup_size = int(args.batch_size * args.unsup_fraction)
+            sup_size = args.batch_size - unsup_size
+            # Among num_phase_shifts unsupervised example batches, pick the one with the worst loss (hardest batch) for training
+            for i in range(args.num_phase_shifts):
+                unsup_data = data[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                unsup_target = target[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                unsup_indexes = indexes[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                (loss, natural_loss, robust_loss,
+                    entropy_loss_unlabeled) = trades_non_adv_loss(
+                        model=model,
+                        x_natural=unsup_data,
+                        y=unsup_target,
+                        optimizer=optimizer,
+                        step_size=args.pgd_step_size,
+                        epsilon=epsilon,
+                        beta=args.beta,
+                        distance=args.distance,
+                        entropy_weight=args.entropy_weight,
+                        example_weights = example_weights, 
+                        indexes = unsup_indexes)
+                if loss > worst_loss:
+                    worst_loss = loss
+                    # worst_i = i
+                    worst_batch = unsup_data
+                    worst_target = unsup_target
+                    worst_indexes = unsup_indexes
 
-        # print(f"Before extending worst batch, data size: {data.shape}")
+            # print(f"Worst batch: {worst_i}, loss: {worst_loss}")
+            # assert worst_i != -1, "Error: worst batch not found"
 
-        # Get supervised data
-        # data, target, indexes = data[:128], target[:128], indexes[:128]
-        # Extend unsupervised data
-        data = torch.cat((data[:128], worst_batch)).cpu().numpy()
-        target = torch.cat((target[:128], worst_target)).cpu().numpy()
-        indexes = torch.cat((indexes[:128], worst_indexes)).cpu().numpy()
-        # data.extend(worst_batch)
-        # target.extend(worst_target)
-        # indexes.extend(worst_indexes)
-        # print(f"After extending worst batch, data size: {data.shape}")
+            # Merge sup and unsup data in single tensors
+            data = torch.cat((data[:128], worst_batch)).cpu().numpy()
+            target = torch.cat((target[:128], worst_target)).cpu().numpy()
+            indexes = torch.cat((indexes[:128], worst_indexes)).cpu().numpy()
 
-        # print(f"Before shuffle data type: {type(data)} targets type: {type(target)} indexes type: {type(indexes)}")
-        p = np.random.permutation(len(data))
-        data, target, indexes = torch.from_numpy(data[p]), torch.from_numpy(target[p]), torch.from_numpy(indexes[p])
-        data, target = data.to(device), target.to(device)
-        # print(f"After shuffle data type: {type(data)} targets type: {type(target)} indexes type: {type(indexes)}")
+            # Shuffle sup and unsup examples
+            p = np.random.permutation(len(data))
+            data, target, indexes = torch.from_numpy(data[p]), torch.from_numpy(target[p]), torch.from_numpy(indexes[p])
+            data, target = data.to(device), target.to(device)
 
-        # Shuffle data=unsup+sup, keep targets accordingly and train
-        # temp = zip(data, target, indexes)
-        # random.shuffle(temp)
-        # data, target, indexes = zip(*temp)
-        # print(f"Before shuffle data type: {type(data)} targets type: {type(target)} indexes type: {type(indexes)}")
-
-        # data, target = data.to(device), target.to(device)
         if args.use_distrib_selection:
             data_2, target_2 = data_2.to(device), target_2.to(device)
         optimizer.zero_grad()
