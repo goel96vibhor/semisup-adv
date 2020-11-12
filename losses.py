@@ -185,6 +185,45 @@ def trades_non_adv_loss(model,
     return loss, loss_natural, loss_robust, loss_entropy_unlabeled
 
 
+def trades_persample_non_adv_loss(model,
+                x_natural,
+                y,
+                optimizer,
+                step_size=0.003,    
+                epsilon=0.031,
+                beta=1.0,
+                distance='inf', 
+                entropy_weight=0):
+    """The TRADES KL-robustness regularization term proposed by
+       Zhang et al., with added support for stability training and entropy
+       regularization"""
+    if beta == 0:
+        logits = model(x_natural)
+        loss = F.cross_entropy(logits, y)
+        inf = torch.Tensor([np.inf])
+        zero = torch.Tensor([0.])
+        return loss, loss, inf, zero
+    
+    model.train()  # moving to train mode to update batchnorm stats
+
+    # zero gradient
+    optimizer.zero_grad()
+
+    logits = model(x_natural)
+
+    loss_natural = F.cross_entropy(logits, y, ignore_index=-1, reduction='none')
+    loss = loss_natural
+    loss_robust = torch.tensor(0)
+
+    is_unlabeled = (y == -1)
+    if torch.sum(is_unlabeled) > 0:
+        logits_unlabeled = logits[is_unlabeled]
+        loss_entropy_unlabeled = entropy_loss(logits_unlabeled)
+        loss = loss + entropy_weight * loss_entropy_unlabeled
+    else:
+        loss_entropy_unlabeled = torch.tensor(0)
+
+    return loss, loss_natural, loss_robust, loss_entropy_unlabeled
 
 def noise_loss(model,
                x_natural,

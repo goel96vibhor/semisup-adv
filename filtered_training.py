@@ -69,6 +69,7 @@ parser.add_argument('--epochs', type=int, default=50, metavar='N',
                     help='Number of epochs to train. Note: we arbitrarily define an epoch as a pass through 50K datapoints. This is convenient for '
                     'comparison with standard CIFAR-10 training configurations.')
 parser.add_argument('--num_phase_shifts', type=int, default=1, help='Number of unsupervised samples to choose for computing worst loss')
+parser.add_argument('--use_persample_loss_shifting', type=int, default=0, help='Whether to use per sample loss or per batch loss to pick the worst unsupervised batch')
 
 # Eval config
 parser.add_argument('--eval_freq', default=1, type=int, help='Eval frequency (in epochs)')
@@ -450,37 +451,67 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model=No
         data, target = data.to(device), target.to(device)
 
         if args.use_multi_detector_filtering:
-            worst_loss = float('-inf')
-            # worst_i = -1
             unsup_size = int(args.batch_size * args.unsup_fraction)
             sup_size = args.batch_size - unsup_size
-            # Among num_phase_shifts unsupervised example batches, pick the one with the worst loss (hardest batch) for training
-            for i in range(args.num_phase_shifts):
-                unsup_data = data[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-                unsup_target = target[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-                unsup_indexes = indexes[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
-                (loss, natural_loss, robust_loss,
-                    entropy_loss_unlabeled) = trades_non_adv_loss(
-                        model=model,
-                        x_natural=unsup_data,
-                        y=unsup_target,
-                        optimizer=optimizer,
-                        step_size=args.pgd_step_size,
-                        epsilon=epsilon,
-                        beta=args.beta,
-                        distance=args.distance,
-                        entropy_weight=args.entropy_weight,
-                        example_weights = example_weights, 
-                        indexes = unsup_indexes)
-                if loss > worst_loss:
-                    worst_loss = loss
-                    # worst_i = i
-                    worst_batch = unsup_data
-                    worst_target = unsup_target
-                    worst_indexes = unsup_indexes
 
-            # print(f"Worst batch: {worst_i}, loss: {worst_loss}")
-            # assert worst_i != -1, "Error: worst batch not found"
+            if not args.use_persample_loss_shifting:
+                # logger.info(f"Using per-batch phase shifting with # phase shifts={args.num_phase_shifts}")
+
+                worst_loss = float('-inf')
+                # # worst_i = -1
+                # Among num_phase_shifts unsupervised example batches, pick the one with the worst loss (hardest batch) for training
+                for i in range(args.num_phase_shifts):
+                    unsup_data = data[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                    unsup_target = target[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                    unsup_indexes = indexes[sup_size + unsup_size*i : sup_size + unsup_size*(i+1)]
+                    (loss, natural_loss, robust_loss,
+                        entropy_loss_unlabeled) = trades_non_adv_loss(
+                            model=model,
+                            x_natural=unsup_data,
+                            y=unsup_target,
+                            optimizer=optimizer,
+                            step_size=args.pgd_step_size,
+                            epsilon=epsilon,
+                            beta=args.beta,
+                            distance=args.distance,
+                            entropy_weight=args.entropy_weight,
+                            example_weights = example_weights, 
+                            indexes = unsup_indexes)
+                    if loss > worst_loss:
+                        worst_loss = loss
+                        # worst_i = i
+                        worst_batch = unsup_data
+                        worst_target = unsup_target
+                        worst_indexes = unsup_indexes
+
+                # print(f"Worst batch: {worst_i}, loss: {worst_loss}")
+                # assert worst_i != -1, "Error: worst batch not found"
+
+            else:
+                # logger.info(f"Using per-sample phase shifting with # phase shifts={args.num_phase_shifts}")
+
+                # Get worst batch according to per sample worst loss examples
+                unsup_data = data[sup_size:]
+                unsup_target = target[sup_size:]
+                unsup_indexes = indexes[sup_size:]
+
+                (persample_loss, _, _, _) = trades_persample_non_adv_loss(
+                    model=model,
+                    x_natural=unsup_data,
+                    y=unsup_target,
+                    optimizer=optimizer,
+                    step_size=args.pgd_step_size,
+                    epsilon=epsilon,
+                    beta=args.beta,
+                    distance=args.distance,
+                    entropy_weight=args.entropy_weight
+                )
+
+                sorted, sorted_indices = torch.sort(persample_loss, descending=True)
+
+                worst_batch = unsup_data[sorted_indices[:unsup_size]]
+                worst_target = unsup_target[sorted_indices[:unsup_size]]
+                worst_indexes = unsup_indexes[sorted_indices[:unsup_size]]
 
             # Merge sup and unsup data in single tensors
             data = torch.cat((data[:sup_size], worst_batch)).cpu().numpy()
