@@ -483,9 +483,9 @@ def train(args, model, device, train_loader, optimizer, epoch, detector_model=No
             # assert worst_i != -1, "Error: worst batch not found"
 
             # Merge sup and unsup data in single tensors
-            data = torch.cat((data[:128], worst_batch)).cpu().numpy()
-            target = torch.cat((target[:128], worst_target)).cpu().numpy()
-            indexes = torch.cat((indexes[:128], worst_indexes)).cpu().numpy()
+            data = torch.cat((data[:sup_size], worst_batch)).cpu().numpy()
+            target = torch.cat((target[:sup_size], worst_target)).cpu().numpy()
+            indexes = torch.cat((indexes[:sup_size], worst_indexes)).cpu().numpy()
 
             # Shuffle sup and unsup examples
             p = np.random.permutation(len(data))
