@@ -36,20 +36,20 @@ class SemiSupervisedDataset(Dataset):
         """A dataset with auxiliary pseudo-labeled data"""
         logger = logging.getLogger()
         if base_dataset == 'cifar10':
-            print("Loading cifar10 dataset")
+            logger.info("Loading cifar10 dataset")
             self.dataset = CIFAR10(train=train, **kwargs)
         elif base_dataset == 'tinyimages':
-            print("Loading TinyImages dataset")
+            logger.info("Loading TinyImages dataset")
             self.dataset = TinyImages(**kwargs)
         elif base_dataset == 'cinic10':
-            print("Loading cinic 10 dataset") 
+            logger.info("Loading cinic 10 dataset") 
             self.dataset = get_cinic_dataset(train = train)             
             # self.dataset.targets = self.dataset.labels
         elif base_dataset == 'benrecht_cifar10':
-            print("Loading Ben recht cifar10 dataset")   
+            logger.info("Loading Ben recht cifar10 dataset")   
             self.dataset = BenRecht_cifar10_dataset(train = train, **kwargs)
         elif base_dataset == 'cifar_own':
-            print("Using own cifar implementation")
+            logger.info("Using own cifar implementation")
             self.dataset = cifar_own.CIFAR10(train=train, **kwargs)
         elif base_dataset == 'qmnist_own':
             if qmnist10k == True:
@@ -64,12 +64,12 @@ class SemiSupervisedDataset(Dataset):
         elif base_dataset == 'custom' and custom_dataset != None:
             self.dataset = custom_dataset
         elif base_dataset == 'unlabeled_percy_500k':
-            print("loading unlabeled percy dataset. No base dataset loaded ..........")
+            logger.info("loading unlabeled percy dataset. No base dataset loaded ..........")
             self.dataset = Empty_Dataset(**kwargs)
             self.targets = np.empty(0,'long')
             self.data = np.empty([0,32,32,3], 'uint8')
         if extend_svhn or base_dataset == 'svhn':
-            print("loading svhn dataset")
+            logger.info("loading svhn dataset")
             transform_train = transforms.Compose([
                 transforms.ToTensor(),
             ])
@@ -116,7 +116,7 @@ class SemiSupervisedDataset(Dataset):
         self.base_dataset = base_dataset
         self.train = train
         self.sup_indices = list(range(len(self.targets)))
-        print("Printing length of targets: %s sup indices: %s" %(len(self.targets), len(self.sup_indices)))
+        logger.info("Printing length of targets: %s, sup indices: %s" %(len(self.targets), len(self.sup_indices)))
         if self.train:
             if take_amount is not None:
                 rng_state = np.random.get_state()
@@ -135,14 +135,14 @@ class SemiSupervisedDataset(Dataset):
                 self.data = np.array(self.data)[take_inds]
                 self.sup_indices = list(range(len(self.targets)))
 
-            print("CIFAR data: targets after filtering: %s sup indices: %s" %(len(self.targets), len(self.sup_indices)))
+            logger.info("CIFAR data: targets after filtering: %s sup indices: %s" %(len(self.targets), len(self.sup_indices)))
             self.unsup_indices = []
 
             if aux_data_filename is not None:
                 assert base_dataset != 'mnist', 'Error, cant have unlabeled data for mnist dataset'
                 assert base_dataset != 'qmnist', 'Error, cant have unlabeled data for qmnist dataset'
                 aux_path = os.path.join(kwargs['root'], aux_data_filename)
-                print("Loading data from %s" % aux_path)
+                logger.info("Loading data from %s" % aux_path)
 
                 with open(aux_path, 'rb') as f:
                     aux = pickle.load(f)
@@ -172,9 +172,9 @@ class SemiSupervisedDataset(Dataset):
                     self.targets = np.concatenate([ self.targets, extend([-1] * len(aux_data))])
                 else:
                     self.targets = np.concatenate([self.targets, aux_targets])
-                print("Unlabeled data: targets after filtering: %s unsup indices: %s" %(len(self.targets), len(self.unsup_indices)))
-                print(self.data.dtype)
-                print(self.targets.dtype)
+                logger.info("Unlabeled data: targets after filtering: %s, unsup indices: %s" %(len(self.targets), len(self.unsup_indices)))
+                # print(self.data.dtype)
+                # print(self.targets.dtype)
                 # note that we use unsup indices to track the labeled datapoints
                 # whose labels are "fake"
 

@@ -20,6 +20,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Sequential, Module
 
+logger = logging.getLogger()
 cifar10_label_names = ['airplane', 'automobile', 'bird',
                        'cat', 'deer', 'dog', 'frog', 'horse',
                        'ship', 'truck']
@@ -59,7 +60,6 @@ def get_model(name, num_classes=10, normalize_input=False):
         widen = int(name_parts[2])
         model = WideResNet(
             depth=depth, num_classes=num_classes, widen_factor=widen)
-        
     elif name_parts[0] == 'ss':
         model = ShakeNet(dict(depth=int(name_parts[1]),
                               base_channels=int(name_parts[2]),
@@ -68,27 +68,27 @@ def get_model(name, num_classes=10, normalize_input=False):
                               n_classes=num_classes,
                               ))
     elif name_parts[0] == 'resnet':
-        logging.info("using model resnet")
+        logging.info("Using model resnet")
         model = ResNet(num_classes=num_classes, depth=int(name_parts[1]))
     elif name_parts[0] == 'PreActResnet18':
-        logging.info("using model preactresnet")
+        logging.info("Using model preactresnet")
         model = PreActResNet18()
     elif name_parts[0] == 'mnistresnet':
-            logging.info("using model mnistresnet")
+            logging.info("Using model mnistresnet")
             kwargs = {'num_classes': 10}
             pretrained = 'mnist'
             if name == 'mnistresnet-18':
                   model = mnist_resnet18()
-                  print("using model mnist_resnet18")
+                  logging.info("Using model mnist_resnet18")
             elif name == 'mnistresnet-34':
                   model = mnist_resnet34()
-                  print("using model mnist_resnet34")
+                  logging.info("Using model mnist_resnet34")
             elif name == 'mnistresnet-50':
                   model = mnist_resnet50()
-                  print("using model mnist_resnet50")
+                  logging.info("Using model mnist_resnet50")
             else:
                   model = mnist_resnet101()
-                  print("using model mnist_resnet101")
+                  logging.info("Using model mnist_resnet101")
     else:
         raise ValueError('Could not parse model name %s' % name)
 
@@ -290,7 +290,7 @@ def load_pretrained_example_losses_from_file(model_dir, model_name, epoch_no = N
       multimarginloss_margin = loss_info['multimarginloss_margin']
       # print(multimarginloss_margin)
       assert train_dataset_size == example_cross_ent_losses.size(0), 'Error: size of input example loaded from file does not match'
-      print("Loaded losses for %d == %d train examples from file %s" %(train_dataset_size, example_cross_ent_losses.size(0), model_file))
+      logger.info("Loaded losses for %d == %d train examples from file %s" %(train_dataset_size, example_cross_ent_losses.size(0), model_file))
 
       return example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs
 

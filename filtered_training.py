@@ -135,7 +135,7 @@ args = parser.parse_args()
 
 def get_filtered_indices(args, example_outputs, random_split_version = 1):
     weights = None
-    print("random pslit version %d" %(random_split_version))
+    logger.info("Random split version %d" %(random_split_version))
 
     if args.use_two_detector_filtering:
         if (not (args.use_distrib_selection or args.use_distrib_concatenation)) or (random_split_version == 1):
@@ -333,11 +333,12 @@ if args.use_distrib_selection:
 # TODO: make sure that this code works also when trainset.unsup_indices=[]
 
 if args.filter_unsup_data:
+    logger.info("Filtering unsupervised data")
     example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                 args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
     filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(args, example_outputs, random_split_version = 1)
     logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
-    print(filtered_unsup_indices[0:10])
+    logger.info(f"Sample filtered indices: {filtered_unsup_indices[:10]}")
     trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
     example_weights[trainset.unsup_indices] = filtered_unsup_weights
 
@@ -346,7 +347,7 @@ if args.filter_unsup_data:
         assert args.use_distrib_concatenation !=1, "Use one of distribution selction or concatenation"
         filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
         logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
-        print(filtered_unsup_indices_2[0:10])
+        logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
         trainset_2.unsup_indices = torch.add(filtered_unsup_indices_2, len(trainset_2.sup_indices)).tolist()
         example_weights_2[trainset_2.unsup_indices] = filtered_unsup_weights_2
         example_weights_2 = example_weights_2.cuda()
@@ -354,17 +355,20 @@ if args.filter_unsup_data:
         assert args.random_split_version != 1, "Random split version should be other than 1"
         filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
         logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
+        logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
+        
         unsup_indices_2 = torch.add(filtered_unsup_indices_2, len(trainset.sup_indices)).tolist()
         combined = torch.cat((torch.tensor(trainset.unsup_indices), torch.tensor(unsup_indices_2)))
         uniques, counts = combined.unique(return_counts=True)
         trainset.unsup_indices = uniques[counts >= 1].tolist()
         intersection = uniques[counts > 1]
         logger.info("Intersection size %d " %(intersection.shape[0]))
-        print(intersection[0:5])
-        print(example_weights[intersection[0:5]])
-        print(filtered_unsup_weights_2[0:10], unsup_indices_2[0:10])
+        logger.info(f"Sample intersection: {intersection[:5]}")
+        logger.info(f"Sample intersection weights: {example_weights[intersection[:5]]}")
+        logger.info(f"Sample Filtered unsup weights 2: {filtered_unsup_weights_2[:5]}")
+        logger.info(f"Sample unsup indices 2: {unsup_indices_2[:5]}")
         example_weights[unsup_indices_2] = example_weights[unsup_indices_2] + (torch.tensor(filtered_unsup_weights_2) - 1)
-        print(example_weights[intersection[0:5]])
+        logger.info(f"Sample example weights[intersection]: {example_weights[intersection[0:5]]}")
         logger.info("Final filtered indices obtained after concatenation: %d, Sum weights_1 %0.4f weights_2 %0.4f Concat %0.4f"
                 %(len(trainset.unsup_indices), torch.sum(filtered_unsup_weights), torch.sum(filtered_unsup_weights_2), torch.sum(example_weights[trainset.unsup_indices])))
 
