@@ -91,9 +91,11 @@ parser.add_argument('--num_detectors', default=4, type=int, help='Number of dete
 parser.add_argument('--use_example_weighing', default=0, type=int, help='Whether to use example weighing for detectors using two detector')
 parser.add_argument('--use_example_sampling', default=1, type=int, help='Whether to sample unlabled examples for detectors using two detector')
 parser.add_argument('--example_weight_alpha', type=float, default=1.0, help='hyperparamter for example weights')
-parser.add_argument('--random_split_version', type=int, default=2, help='Version of random split')
+# parser.add_argument('--random_split_version', type=int, default=2, help='Version of random split')
 parser.add_argument('--use_distrib_selection', default=0, type=int, help='Whether to use distribution using pair of two detector')
 parser.add_argument('--use_distrib_concatenation', default=0, type=int, help='Whether to use distribution using pair of two detector')
+parser.add_argument('--num_det_pairs_for_concat', default=1, type=int, help='How many detector pairs to consider for concatenation based filtering')
+
 # Optimizer config
 parser.add_argument('--weight_decay', '--wd', default=5e-4, type=float)
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR', help='Learning rate')
@@ -133,17 +135,26 @@ parser.add_argument('--cutout', action='store_true', default=False, help='Use cu
 args = parser.parse_args()
 
 
-def get_filtered_indices(args, example_outputs, random_split_version = 1):
+def get_filtered_indices(args, example_outputs, random_split_version=0):
     weights = None
     logger.info("Random split version %d" %(random_split_version))
 
     if args.use_two_detector_filtering:
-        if (not (args.use_distrib_selection or args.use_distrib_concatenation)) or (random_split_version == 1):
-            det1_unlab_file = 'selection_model/testing_head_0.1/unlabeled_percy_500k.csv'
-            det2_unlab_file = 'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv'            
-        else:
-            det1_unlab_file = 'selection_model/testing_head_0.1_v'+str(args.random_split_version) + '_1Mstart/unlabeled_percy_500k.csv'
-            det2_unlab_file = 'selection_model/testing_tail_0.1_v'+str(args.random_split_version) + '_1Mstart/unlabeled_percy_500k.csv'
+        unlab_det_files_paired = [('selection_model/testing_head_0.1/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1/unlabeled_percy_500k.csv'),
+            ('selection_model/testing_head_0.1_v2_1Mstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1_v2_1Mstart/unlabeled_percy_500k.csv'),
+            ('selection_model/testing_head_0.1_v3_500Kstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1_v3_500Kstart/unlabeled_percy_500k.csv'),
+            ('selection_model/testing_head_0.1_v4_1.5Mstart/unlabeled_percy_500k.csv',
+            'selection_model/testing_tail_0.1_v4_1.5Mstart/unlabeled_percy_500k.csv')]
+        
+        if (not (args.use_distrib_selection or args.use_distrib_concatenation)):
+            random_split_version = 0
+        
+        det1_unlab_file = unlab_det_files_paired[random_split_version][0]
+        det2_unlab_file = unlab_det_files_paired[random_split_version][1]
+        
         logging.info('Filtering unsup indices using two detector predictions from file %s' %(det1_unlab_file))
         det1_unlab_df = pd.read_csv(det1_unlab_file)
         det2_unlab_df = pd.read_csv(det2_unlab_file)
@@ -336,41 +347,62 @@ if args.filter_unsup_data:
     logger.info("Filtering unsupervised data")
     example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs = load_pretrained_example_losses_from_file(
                 args.pretrained_model_dir, args.pretrained_model_name, args.pretrained_epochs)
-    filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(args, example_outputs, random_split_version = 1)
+    filtered_unsup_indices, filtered_unsup_weights = get_filtered_indices(args, example_outputs, random_split_version=0)
     logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices.shape[0]))
     logger.info(f"Sample filtered indices: {filtered_unsup_indices[:10]}")
     trainset.unsup_indices = torch.add(filtered_unsup_indices, len(trainset.sup_indices)).tolist()
     example_weights[trainset.unsup_indices] = filtered_unsup_weights
 
     if args.use_distrib_selection:
-        assert args.random_split_version != 1, "Random split version should be other than 1"
+        # assert args.random_split_version != 1, "Random split version should be other than 1"
         assert args.use_distrib_concatenation !=1, "Use one of distribution selction or concatenation"
-        filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
+        filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version=1)
         logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
         logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
         trainset_2.unsup_indices = torch.add(filtered_unsup_indices_2, len(trainset_2.sup_indices)).tolist()
         example_weights_2[trainset_2.unsup_indices] = filtered_unsup_weights_2
         example_weights_2 = example_weights_2.cuda()
     elif args.use_distrib_concatenation:
-        assert args.random_split_version != 1, "Random split version should be other than 1"
-        filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
-        logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
-        logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
-        
-        unsup_indices_2 = torch.add(filtered_unsup_indices_2, len(trainset.sup_indices)).tolist()
-        combined = torch.cat((torch.tensor(trainset.unsup_indices), torch.tensor(unsup_indices_2)))
-        uniques, counts = combined.unique(return_counts=True)
-        trainset.unsup_indices = uniques[counts >= 1].tolist()
-        intersection = uniques[counts > 1]
-        logger.info("Intersection size %d " %(intersection.shape[0]))
-        logger.info(f"Sample intersection: {intersection[:5]}")
-        logger.info(f"Sample intersection weights: {example_weights[intersection[:5]]}")
-        logger.info(f"Sample Filtered unsup weights 2: {filtered_unsup_weights_2[:5]}")
-        logger.info(f"Sample unsup indices 2: {unsup_indices_2[:5]}")
-        example_weights[unsup_indices_2] = example_weights[unsup_indices_2] + (torch.tensor(filtered_unsup_weights_2) - 1)
-        logger.info(f"Sample example weights[intersection]: {example_weights[intersection[0:5]]}")
-        logger.info("Final filtered indices obtained after concatenation: %d, Sum weights_1 %0.4f weights_2 %0.4f Concat %0.4f"
-                %(len(trainset.unsup_indices), torch.sum(filtered_unsup_weights), torch.sum(filtered_unsup_weights_2), torch.sum(example_weights[trainset.unsup_indices])))
+        for det_pair_idx in range(1, args.num_det_pairs_for_concat):
+            logger.info(f"Filtering indices using detector pair {det_pair_idx}")
+            filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version=det_pair_idx)
+            logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
+            logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
+
+            unsup_indices_2 = torch.add(filtered_unsup_indices_2, len(trainset.sup_indices)).tolist()
+            combined = torch.cat((torch.tensor(trainset.unsup_indices), torch.tensor(unsup_indices_2)))
+            uniques, counts = combined.unique(return_counts=True)
+            trainset.unsup_indices = uniques[counts >= 1].tolist()
+            intersection = uniques[counts > 1]
+            logger.info("Intersection size %d " %(intersection.shape[0]))
+            logger.info(f"Sample intersection: {intersection[:5]}")
+            logger.info(f"Sample intersection weights: {example_weights[intersection[:5]]}")
+            logger.info(f"Sample Filtered unsup weights 2: {filtered_unsup_weights_2[:5]}")
+            logger.info(f"Sample unsup indices 2: {unsup_indices_2[:5]}")
+            example_weights[unsup_indices_2] = example_weights[unsup_indices_2] + (torch.tensor(filtered_unsup_weights_2) - 1)
+            logger.info(f"Sample example weights[intersection]: {example_weights[intersection[0:5]]}")
+            logger.info("Final filtered indices obtained after concatenation: %d, Sum weights_1 %0.4f weights_2 %0.4f Concat %0.4f"
+                    %(len(trainset.unsup_indices), torch.sum(filtered_unsup_weights), torch.sum(filtered_unsup_weights_2), torch.sum(example_weights[trainset.unsup_indices])))
+
+        # assert args.random_split_version != 1, "Random split version should be other than 1"
+        # filtered_unsup_indices_2, filtered_unsup_weights_2 = get_filtered_indices(args, example_outputs, random_split_version = args.random_split_version)
+        # logger.info("Filtered indices obtained of size %d" %(filtered_unsup_indices_2.shape[0]))
+        # logger.info(f"Sample filtered indices: {filtered_unsup_indices_2[:10]}")
+
+        # unsup_indices_2 = torch.add(filtered_unsup_indices_2, len(trainset.sup_indices)).tolist()
+        # combined = torch.cat((torch.tensor(trainset.unsup_indices), torch.tensor(unsup_indices_2)))
+        # uniques, counts = combined.unique(return_counts=True)
+        # trainset.unsup_indices = uniques[counts >= 1].tolist()
+        # intersection = uniques[counts > 1]
+        # logger.info("Intersection size %d " %(intersection.shape[0]))
+        # logger.info(f"Sample intersection: {intersection[:5]}")
+        # logger.info(f"Sample intersection weights: {example_weights[intersection[:5]]}")
+        # logger.info(f"Sample Filtered unsup weights 2: {filtered_unsup_weights_2[:5]}")
+        # logger.info(f"Sample unsup indices 2: {unsup_indices_2[:5]}")
+        # example_weights[unsup_indices_2] = example_weights[unsup_indices_2] + (torch.tensor(filtered_unsup_weights_2) - 1)
+        # logger.info(f"Sample example weights[intersection]: {example_weights[intersection[0:5]]}")
+        # logger.info("Final filtered indices obtained after concatenation: %d, Sum weights_1 %0.4f weights_2 %0.4f Concat %0.4f"
+        #         %(len(trainset.unsup_indices), torch.sum(filtered_unsup_weights), torch.sum(filtered_unsup_weights_2), torch.sum(example_weights[trainset.unsup_indices])))
 
 if args.use_example_sampling:
     assert args.use_example_weighing == False, 'Can do only one of example sampling or weighing'
