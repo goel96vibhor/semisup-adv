@@ -82,8 +82,10 @@ logging.info('Args: %s', args)
 
 
 # create dataset and loader
-num_images = 79302017
-data_path = os.path.join(args.data_dir, 'tiny_images.bin')
+# num_images = 79302017
+# data_path = os.path.join(args.data_dir, 'tiny_images.bin')
+num_images = 50000
+data_path = os.path.join(args.data_dir, 'tiny_50k.bin')
 data = np.memmap(data_path, mode='r', dtype='uint8', order='C'
                  ).reshape(num_images, 3, 32, 32).transpose((0, 1, 3, 2))
 

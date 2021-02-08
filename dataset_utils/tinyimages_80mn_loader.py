@@ -2,11 +2,17 @@ import numpy as np
 import torch
 from bisect import bisect_left
 
+
 class TinyImages(torch.utils.data.Dataset):
 
-    def __init__(self, train = False, transform=None, target_transform = None, exclude_cifar=False):
+    def __init__(self, train=False, 
+                transform=None, target_transform=None, 
+                exclude_cifar=False,
+                dataset_dir='data/unlabeled_datasets/80M_Tiny_Images/tiny_50k.bin',
+                logger=None, num_images=50000):
 
-        data_file = open('data/unlabeled_datasets/80M_Tiny_Images/tiny_50k.bin', "rb")
+        data_file = open(dataset_dir, "rb")
+        self.num_images = num_images
 
         def load_image(idx):
             data_file.seek(idx * 3072)
@@ -43,37 +49,29 @@ class TinyImages(torch.utils.data.Dataset):
         def load_tinyimages():
             data = []
             targets = []
-
             # from PIL import Image
-
-            for idx in range(50000):
+            for idx in range(self.num_images):
                 dt, tgt = self.load_image(idx)
-
                 # if idx < 5:
                 #     print('dt shape:', np.shape(dt))
                 #     img = Image.fromarray(dt)
-                #     img.save('test_{}.png'.format(idx))
-
+                #     img.save('test_rohish_{}.png'.format(idx))
                 data.append(dt)
                 targets.append(tgt)
-            #     if idx<10:
-            #           print(dt)
-            #           print(tgt)
-            return np.asarray(data), np.asarray(targets)
-            # return data, targets
+            return np.asarray(data), np.asarray(targets)    # torch.tensor(data), torch.tensor(targets)
 
         self.data, self.targets = load_tinyimages()
-        print('Shape of data in loader:', np.shape(self.data))
+        logger.info(f'Shape of data in tinyimages loader: {np.shape(self.data)}, {np.shape(self.targets)}')
 
     def __getitem__(self, index):
-        index = (index + self.offset) % 49999
+        index = (index + self.offset) % (self.num_images - 1)
 
         if self.exclude_cifar:
             print("Excluding cifar")
             while self.in_cifar(index):
-                index = np.random.randint(50000)
+                index = np.random.randint(self.num_images)
 
-      #   img = self.load_image(index)
+        # img = self.load_image(index)
         
         img, target = self.data[index], self.targets[index]
 
@@ -86,7 +84,4 @@ class TinyImages(torch.utils.data.Dataset):
         return img, target  # 0 is the class
 
     def __len__(self):
-        return 50000
-
-
-    
+        return self.num_images

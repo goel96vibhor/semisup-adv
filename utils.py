@@ -25,33 +25,35 @@ cifar10_label_names = ['airplane', 'automobile', 'bird',
                        'cat', 'deer', 'dog', 'frog', 'horse',
                        'ship', 'truck']
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 def load_detector_model(args):
-    
     detector_model = get_model(args.detector_model,
                       num_classes=args.n_classes,
                       normalize_input=False)
-#     detector_model = torch.nn.DataParallel(detector_model).cuda()
+    # detector_model = torch.nn.DataParallel(detector_model).cuda()
     checkpoint = torch.load(args.detector_model_path)
     state_dict = checkpoint.get('state_dict', checkpoint)
     def strip_data_parallel(s):
-                  if s.startswith('module.1'):
-                        return s[len('module.1.'):]
-                  elif s.startswith('module.0'):
-                        return None
-                  elif s.startswith('module'):
-                        return s[len('module.'):]
-                  else:
-                        return s
+        if s.startswith('module.1'):
+            return s[len('module.1.'):]
+        elif s.startswith('module.0'):
+            return None
+        elif s.startswith('module'):
+            return s[len('module.'):]
+        else:
+            return s
     new_state_dict = {}
     for k,v in state_dict.items():
-          k_new = strip_data_parallel(k)
-          if k_new:
-                new_state_dict[k_new] = v
-#     state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
+        k_new = strip_data_parallel(k)
+        if k_new:
+            new_state_dict[k_new] = v
+    # state_dict = {strip_data_parallel(k): v for k, v in state_dict.items()}
     detector_model.load_state_dict(new_state_dict)
     detector_model = torch.nn.DataParallel(detector_model).cuda()
     #logging.info("Loaded detector model with epoch %d, accuracy %0.4f" %(checkpoint['epoch'], checkpoint['accuracy_vs']))
     return detector_model
+
 
 def get_model(name, num_classes=10, normalize_input=False):
     name_parts = name.split('-')
@@ -78,17 +80,17 @@ def get_model(name, num_classes=10, normalize_input=False):
             kwargs = {'num_classes': 10}
             pretrained = 'mnist'
             if name == 'mnistresnet-18':
-                  model = mnist_resnet18()
-                  logging.info("Using model mnist_resnet18")
+                model = mnist_resnet18()
+                logging.info("Using model mnist_resnet18")
             elif name == 'mnistresnet-34':
-                  model = mnist_resnet34()
-                  logging.info("Using model mnist_resnet34")
+                model = mnist_resnet34()
+                logging.info("Using model mnist_resnet34")
             elif name == 'mnistresnet-50':
-                  model = mnist_resnet50()
-                  logging.info("Using model mnist_resnet50")
+                model = mnist_resnet50()
+                logging.info("Using model mnist_resnet50")
             else:
-                  model = mnist_resnet101()
-                  logging.info("Using model mnist_resnet101")
+                model = mnist_resnet101()
+                logging.info("Using model mnist_resnet101")
     else:
         raise ValueError('Could not parse model name %s' % name)
 
@@ -96,6 +98,7 @@ def get_model(name, num_classes=10, normalize_input=False):
         model = Sequential(NormalizeInput(), model)
 
     return model
+
 
 def calculate_tensor_percentile(t: torch.tensor, q: float):
     """
@@ -118,10 +121,11 @@ def calculate_tensor_percentile(t: torch.tensor, q: float):
     result = t.view(-1).kthvalue(k).values.item()
     return result
 
+
 def calc_indiv_loss(y, targets):
     temp = F.softmax(y)
     loss = [-torch.log(temp[i][targets[i].item()]) for i in range(y.size(0))]
-#     loss = F.cross_entropy(y, targets, reduction = 'None')
+    # loss = F.cross_entropy(y, targets, reduction = 'None')
     return torch.stack(loss)
 
 class NormalizeInput(Module):
@@ -134,6 +138,7 @@ class NormalizeInput(Module):
 
     def forward(self, x):
         return (x - self.mean) / self.std
+
 
 # TODO: decide whether to remove all code below this line
 # Should we add some description of how these files
@@ -255,44 +260,44 @@ def load_new_test_data_indices(version_string='v7'):
 
 
 def dump_pretrained_example_losses_to_file(model_dir, pretrained_epochs, model_name, loss_info):
-      pretrained_model = get_model(model_name)
-      assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
-      assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
-      
-      model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(pretrained_epochs) + '.pickle'
-      # assert os.path.isfile(model_file), 'Error: no checkpoint file found!'
-      # loss_info = dict()
-      # loss_info['model_name'] = model_name
-      # loss_info['dataset_length'] = example_losses.size(0)
-      # loss_info['examples_losses'] = example_losses
-      # loss_info['pretrained_acc'] = pretrained_acc
-      # loss_info['pretrained_epochs'] = pretrained_epochs
-      with open(model_file, 'wb') as f:
-            pickle.dump(loss_info, f)
-      print("Dumped losses for %d train examples to file %s" %(loss_info['example_cross_ent_losses'].size(0), model_file))
+    pretrained_model = get_model(model_name)
+    assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
+    assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
+    
+    model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(pretrained_epochs) + '.pickle'
+    # assert os.path.isfile(model_file), 'Error: no checkpoint file found!'
+    # loss_info = dict()
+    # loss_info['model_name'] = model_name
+    # loss_info['dataset_length'] = example_losses.size(0)
+    # loss_info['examples_losses'] = example_losses
+    # loss_info['pretrained_acc'] = pretrained_acc
+    # loss_info['pretrained_epochs'] = pretrained_epochs
+    with open(model_file, 'wb') as f:
+        pickle.dump(loss_info, f)
+    print("Dumped losses for %d train examples to file %s" %(loss_info['example_cross_ent_losses'].size(0), model_file))
 
 def load_pretrained_example_losses_from_file(model_dir, model_name, epoch_no = None):
-      pretrained_model = get_model(model_name)
-      assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
-      assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
-      model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(epoch_no) + '.pickle'
-      assert os.path.isfile(model_file), 'Error: no example loss file found! --- %s' %(model_file)
-      with open(model_file, 'rb') as f:
-            loss_info = pickle.load(f)
-      model_name = loss_info['model_name']
-      train_dataset_size = loss_info['dataset_length']
-      example_cross_ent_losses = loss_info['example_cross_ent_losses']
-      example_multi_margin_losses = loss_info['example_multi_margin_losses']
-      example_labels = loss_info['example_labels']
-      example_outputs = loss_info['example_outputs']
-      pretrained_acc = loss_info['pretrained_acc']
-      pretrained_epochs = loss_info['pretrained_epochs']
-      multimarginloss_margin = loss_info['multimarginloss_margin']
-      # print(multimarginloss_margin)
-      assert train_dataset_size == example_cross_ent_losses.size(0), 'Error: size of input example loaded from file does not match'
-      logger.info("Loaded losses for %d == %d train examples from file %s" %(train_dataset_size, example_cross_ent_losses.size(0), model_file))
+    pretrained_model = get_model(model_name)
+    assert os.path.isdir(model_dir), 'Error: no checkpoint directory found!'
+    assert os.path.isdir(model_dir + '/' + model_name), 'Error: no checkpoint directory found!'
+    model_file = model_dir + '/' + model_name + '/' + 'unlabloss_' + str(epoch_no) + '.pickle'
+    assert os.path.isfile(model_file), 'Error: no example loss file found! --- %s' %(model_file)
+    with open(model_file, 'rb') as f:
+        loss_info = pickle.load(f)
+    model_name = loss_info['model_name']
+    train_dataset_size = loss_info['dataset_length']
+    example_cross_ent_losses = loss_info['example_cross_ent_losses']
+    example_multi_margin_losses = loss_info['example_multi_margin_losses']
+    example_labels = loss_info['example_labels']
+    example_outputs = loss_info['example_outputs']
+    pretrained_acc = loss_info['pretrained_acc']
+    pretrained_epochs = loss_info['pretrained_epochs']
+    multimarginloss_margin = loss_info['multimarginloss_margin']
+    # print(multimarginloss_margin)
+    assert train_dataset_size == example_cross_ent_losses.size(0), 'Error: size of input example loaded from file does not match'
+    logger.info("Loaded losses for %d == %d train examples from file %s" %(train_dataset_size, example_cross_ent_losses.size(0), model_file))
 
-      return example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs
+    return example_cross_ent_losses, example_multi_margin_losses, pretrained_acc, pretrained_epochs, example_outputs
 
 
 def plot_histogram(cifar_conf_vals, noncifar_conf_vals, dataset):
